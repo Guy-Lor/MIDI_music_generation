@@ -9,10 +9,10 @@ from keras.layers import Dense, LSTM, Activation
 # TODO Piano roll for drums!
 # TODO Add instruments join for piano roll (same instrument, same piano roll)
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
-from tensorflow.python.keras.optimizers import RMSprop
+# from tensorflow.python.keras.optimizers import RMSprop
 
 SAMPLING_FREQ = 5
-WINDOW_SIZE = 100
+WINDOW_SIZE = 10
 
 
 def get_piano_roll(instrument, end_time):
@@ -43,10 +43,17 @@ def get_time_note_dict(piano_roll):
 
 def get_RNN_input_target(notes_list):
     # Creates input, target np arrays in the requested window size
-    input_windows = np.lib.stride_tricks.sliding_window_view([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)
-    target_windows = np.lib.stride_tricks.sliding_window_view(notes_list, 1)
-
+    notes_list[0]=33
+    input_windows = rolling_window([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)[:-1]
+    target_windows = rolling_window(notes_list, 1)
     return input_windows, target_windows
+
+
+def rolling_window(a, window):
+    a = np.array(a)
+    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
+    strides = a.strides + (a.strides[-1],)
+    return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
 
 
 def midi_preprocess(path, notes_hash, instruments_dependencies=False, print_info=False, separate_midi_file=False):
@@ -106,10 +113,9 @@ class ModelTrainer:
         self.notes_hash = NotesHash()
         self.epochs = epochs
         self.batches = batches
-        self.input_data = x
-        self.target_data = y
+        self.input_data = np.reshape(x, (x.shape[0], x.shape[1],1))# [[...],[...],[...]]
+        self.target_data = y #np.reshape(y, (y.shape[0], y.shape[1],1))
         self.model = self.create_model()  # Remember to use Cross-batch statefulness
-
 
     def create_model(self):
         # create sequential network, because we are passing activations
@@ -160,7 +166,8 @@ def main():
     print(files)
     notes_hash = NotesHash()
 
-    input_windows, target_windows = midi_preprocess(path='all_blues-Miles-Davis_dz.mid', notes_hash=notes_hash, instruments_dependencies=False, print_info=True, separate_midi_file=False)
+    input_windows, target_windows = midi_preprocess(path='all_blues-Miles-Davis_dz.mid', notes_hash=notes_hash, instruments_dependencies=False,
+                                                    print_info=True, separate_midi_file=False)
     model = ModelTrainer(x=input_windows, y=target_windows, epochs=1, batches=16)
     model.train()
     # reading each midi file
