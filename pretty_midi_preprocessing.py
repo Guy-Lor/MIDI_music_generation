@@ -12,7 +12,7 @@ from keras.layers import Dense, LSTM, Activation
 # from tensorflow.python.keras.optimizers import RMSprop
 
 SAMPLING_FREQ = 5
-WINDOW_SIZE = 10
+WINDOW_SIZE = 100
 
 
 def get_piano_roll(instrument, end_time):
@@ -43,7 +43,6 @@ def get_time_note_dict(piano_roll):
 
 def get_RNN_input_target(notes_list):
     # Creates input, target np arrays in the requested window size
-    notes_list[0]=33
     input_windows = rolling_window([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)[:-1]
     target_windows = rolling_window(notes_list, 1)
     return input_windows, target_windows
@@ -99,22 +98,22 @@ def midi_preprocess(path, notes_hash, instruments_dependencies=False, print_info
             current_note = dict_keys_time[time]
             notes_list += [notes_hash.notes_dict[current_note]]
 
-    print(notes_list)
+    # print(notes_list)
     input_windows, target_windows = get_RNN_input_target(notes_list)
-    print(input_windows)
-    print(target_windows)
+    # print(input_windows)
+    # print(target_windows)
     # print(input_windows[0], target_windows[0])
 
     return input_windows, target_windows
 
 
 class ModelTrainer:
-    def __init__(self, x, y, epochs, batches, is_stateful=True):
+    def __init__(self, x, y, epochs, batches, is_stateful=False):
         self.notes_hash = NotesHash()
         self.epochs = epochs
         self.batches = batches
         self.is_stateful = is_stateful
-        self.num_of_batches = int(len(x)/batches)
+        self.num_of_batches = int(len(x) / batches)
         if self.is_stateful:
             x = x[:self.num_of_batches * batches]
             y = y[:self.num_of_batches * batches]
@@ -123,7 +122,6 @@ class ModelTrainer:
         self.target_data = y
         self.model = self.create_model()
 
-
     def create_model(self):
         # create sequential network, because we are passing activations
         # down the network
@@ -131,7 +129,7 @@ class ModelTrainer:
 
         # add LSTM layer
         if self.is_stateful:
-            model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1), stateful=self.is_stateful ,batch_input_shape=(self.batches,WINDOW_SIZE,1)))
+            model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1), stateful=self.is_stateful, batch_input_shape=(self.batches, WINDOW_SIZE, 1)))
         else:
             model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
 
@@ -151,6 +149,25 @@ class ModelTrainer:
     def train(self):
         # train the model
         self.model.fit(self.input_data, self.target_data, batch_size=self.batches, epochs=self.epochs)
+
+    def generate_MIDI(self, initial_sample: list, length=1600):
+        current_window = initial_sample
+        current_window_list = list(current_window[0])
+
+        total_song = list(initial_sample[0])
+        for i in range(length):
+            # print("Iteration: " ,i)
+            current_window = np.array([current_window_list])
+            current_window = np.reshape(current_window, (current_window.shape[0], current_window.shape[1], 1))
+            y = self.model.predict(current_window)
+
+            # print("Current window length before: ", len(current_window_list))
+            current_window_list += [int(y)]
+            current_window_list.pop(0)
+            # print("Current window length after: ", len(current_window_list))
+
+            total_song += [int(y)]
+        return total_song
 
 
 # 10 songs --> instruments (1) --> array of windows -->16 windows per batch
@@ -177,12 +194,15 @@ def main():
 
     input_windows, target_windows = midi_preprocess(path='all_blues-Miles-Davis_dz.mid', notes_hash=notes_hash, instruments_dependencies=False,
                                                     print_info=True, separate_midi_file=False)
-    model = ModelTrainer(x=input_windows, y=target_windows, epochs=30, batches=16)
+    model = ModelTrainer(x=input_windows, y=target_windows, epochs=10, batches=16)
     model.train()
+    midi = model.generate_MIDI([input_windows[WINDOW_SIZE]])
+    print(midi)
     # reading each midi file
     # for file in files:
     #     midi_preprocess(path + file, notes_hash=notes_hash, instruments_dependencies=False, print_info=True, separate_midi_file=False)
 
+    print(len(notes_hash.notes_dict))
 
 if __name__ == '__main__':
     main()
