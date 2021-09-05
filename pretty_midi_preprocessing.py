@@ -3,10 +3,14 @@
 import pretty_midi as pm
 import numpy as np
 import os
+from keras.models import Sequential
+from keras.layers import Dense, LSTM, Activation
 
 # TODO Piano roll for drums!
 # TODO Add instruments join for piano roll (same instrument, same piano roll)
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
+from tensorflow.python.keras.optimizers import RMSprop
+
 SAMPLING_FREQ = 5
 WINDOW_SIZE = 100
 
@@ -36,9 +40,13 @@ def get_time_note_dict(piano_roll):
     return dict_keys_time
     # return list_of_dict_keys_time
 
-def get_train_target_lists(notes_list):
-    for i in range(-WINDOW_SIZE, len(notes_list)-WINDOW_SIZE,1):
-        pass
+
+def get_RNN_input_target(notes_list):
+    # Creates input, target np arrays in the requested window size
+    input_windows = np.lib.stride_tricks.sliding_window_view([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)
+    target_windows = np.lib.stride_tricks.sliding_window_view(notes_list, 1)
+
+    return input_windows, target_windows
 
 
 def midi_preprocess(path, notes_hash, instruments_dependencies=False, print_info=False, separate_midi_file=False):
@@ -85,8 +93,53 @@ def midi_preprocess(path, notes_hash, instruments_dependencies=False, print_info
             notes_list += [notes_hash.notes_dict[current_note]]
 
     print(notes_list)
+    input_windows, target_windows = get_RNN_input_target(notes_list)
+    print(input_windows)
+    print(target_windows)
+    # print(input_windows[0], target_windows[0])
+
+    return input_windows, target_windows
 
 
+class ModelTrainer:
+    def __init__(self, x, y, epochs, batches):
+        self.notes_hash = NotesHash()
+        self.epochs = epochs
+        self.batches = batches
+        self.input_data = x
+        self.target_data = y
+        self.model = self.create_model()  # Remember to use Cross-batch statefulness
+
+
+    def create_model(self):
+        # create sequential network, because we are passing activations
+        # down the network
+        model = Sequential()
+
+        # add LSTM layer
+        model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
+
+        # add Softmax layer to output one character
+        # model.add(Dense(len(chars)))
+        # model.add(Activation('softmax'))
+
+        model.add(Dense(50))
+        model.add(Dense(50))
+
+        model.add(Dense(1))
+
+        # compile the model and pick the loss and optimizer
+        model.compile(loss='mse', optimizer='adam')
+
+        return model
+
+    def train(self):
+        # train the model
+        self.model.fit(self.input_data, self.target_data, batch_size=self.batches, epochs=self.epochs)
+
+
+# 10 songs --> instruments (1) --> array of windows -->16 windows per batch
+# Remember: Add one-hot encoding to target/input
 class NotesHash:
     def __init__(self):
         self.notes_dict = {'e': 1}
@@ -106,11 +159,13 @@ def main():
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
     notes_hash = NotesHash()
-    # midi_preprocess(path='all_blues-Miles-Davis_dz.mid', notes_hash=notes_hash, instruments_dependencies=False, print_info=True, separate_midi_file=False)
 
+    input_windows, target_windows = midi_preprocess(path='all_blues-Miles-Davis_dz.mid', notes_hash=notes_hash, instruments_dependencies=False, print_info=True, separate_midi_file=False)
+    model = ModelTrainer(x=input_windows, y=target_windows, epochs=1, batches=16)
+    model.train()
     # reading each midi file
-    for file in files:
-        midi_preprocess(path+file, notes_hash=notes_hash, instruments_dependencies=False, print_info=True, separate_midi_file=False)
+    # for file in files:
+    #     midi_preprocess(path + file, notes_hash=notes_hash, instruments_dependencies=False, print_info=True, separate_midi_file=False)
 
 
 if __name__ == '__main__':
