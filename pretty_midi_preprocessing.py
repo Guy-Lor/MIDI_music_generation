@@ -109,13 +109,20 @@ def midi_preprocess(path, notes_hash, instruments_dependencies=False, print_info
 
 
 class ModelTrainer:
-    def __init__(self, x, y, epochs, batches):
+    def __init__(self, x, y, epochs, batches, is_stateful=True):
         self.notes_hash = NotesHash()
         self.epochs = epochs
         self.batches = batches
-        self.input_data = np.reshape(x, (x.shape[0], x.shape[1],1))# [[...],[...],[...]]
-        self.target_data = y #np.reshape(y, (y.shape[0], y.shape[1],1))
-        self.model = self.create_model()  # Remember to use Cross-batch statefulness
+        self.is_stateful = is_stateful
+        self.num_of_batches = int(len(x)/batches)
+        if self.is_stateful:
+            x = x[:self.num_of_batches * batches]
+            y = y[:self.num_of_batches * batches]
+
+        self.input_data = np.reshape(x, (x.shape[0], x.shape[1], 1))
+        self.target_data = y
+        self.model = self.create_model()
+
 
     def create_model(self):
         # create sequential network, because we are passing activations
@@ -123,7 +130,10 @@ class ModelTrainer:
         model = Sequential()
 
         # add LSTM layer
-        model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
+        if self.is_stateful:
+            model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1), stateful=self.is_stateful ,batch_input_shape=(self.batches,WINDOW_SIZE,1)))
+        else:
+            model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
 
         # add Softmax layer to output one character
         # model.add(Dense(len(chars)))
@@ -131,7 +141,6 @@ class ModelTrainer:
 
         model.add(Dense(50))
         model.add(Dense(50))
-
         model.add(Dense(1))
 
         # compile the model and pick the loss and optimizer
@@ -168,7 +177,7 @@ def main():
 
     input_windows, target_windows = midi_preprocess(path='all_blues-Miles-Davis_dz.mid', notes_hash=notes_hash, instruments_dependencies=False,
                                                     print_info=True, separate_midi_file=False)
-    model = ModelTrainer(x=input_windows, y=target_windows, epochs=1, batches=16)
+    model = ModelTrainer(x=input_windows, y=target_windows, epochs=30, batches=16)
     model.train()
     # reading each midi file
     # for file in files:
