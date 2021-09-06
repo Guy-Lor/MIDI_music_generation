@@ -8,6 +8,7 @@ from keras.engine.saving import load_model
 from keras.models import Sequential
 from keras.layers import Dense, LSTM, Activation, ReLU
 import matplotlib.pyplot as plt
+from copy import deepcopy
 
 # TODO Piano roll for drums!
 # TODO Add instruments join for piano roll (same instrument, same piano roll)
@@ -49,7 +50,7 @@ def get_RNN_input_target(notes_list):
     # Creates input, target np arrays in the requested window size
     input_windows = rolling_window([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)[:-1]
     target_windows = rolling_window(notes_list, 1)
-    input_windows= np.reshape(input_windows, (input_windows.shape[0], input_windows.shape[1], 1))
+    input_windows = np.reshape(input_windows, (input_windows.shape[0], input_windows.shape[1], 1))
     return input_windows, target_windows
 
 
@@ -133,7 +134,8 @@ class NotesHash:
             self.token_counter += 1
 
     def get_size(self):
-        return len(self.notes_dict)
+        size = len(self.notes_dict)
+        return size
 
 
 class ModelTrainer:
@@ -142,7 +144,7 @@ class ModelTrainer:
         self.epochs = epochs
         self.batches = batches
         # change to files when want to go over all files
-        self.files = files[:2]
+        self.files = files
         self.path = path
         self.is_stateful = is_stateful
         self.one_hot_encode = one_hot_encode
@@ -153,13 +155,12 @@ class ModelTrainer:
         #     x = x[:self.num_of_batches * batches]
         #     y = y[:self.num_of_batches * batches]
         #
-        # self.input_data = np.reshape(x, (x.shape[0], x.shape[1], 1))
-        # self.target_data = to_categorical(y) if one_hot_encode else y
-        self.model = self.create_model()
+        # self.preprocess_files()
+        self.model = None
 
     def preprocess_files(self):
         all_songs_real_notes = []
-        temp_all_songs_target_windows=[]
+        temp_all_songs_target_windows = []
 
         for file in self.files:
             real_notes_list, input_windows, target_windows = midi_preprocess(path=self.path + file, notes_hash=self.notes_hash,
@@ -170,16 +171,8 @@ class ModelTrainer:
             all_songs_real_notes += [real_notes_list]
 
         for target in temp_all_songs_target_windows:
-            temp = to_categorical(target)
-            print(temp.shape)
             target = to_categorical(target, num_classes=self.notes_hash.get_size())
-            print((target.shape))
             self.all_songs_target_windows += [target]
-        print(self.notes_hash.get_size())
-        # print(self.all_songs_target_windows)
-
-
-
 
     def create_model(self):
         # create sequential network, because we are passing activations
@@ -192,19 +185,20 @@ class ModelTrainer:
         else:
             model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
 
-        model.add(Dense(128))
+        model.add(Dense(512))
         model.add(ReLU())
-        model.add(Dense(128))
+        model.add(Dense(512))
 
         # compile the model and pick the loss and optimizer
         if self.one_hot_encode:
-            model.add(Dense(self.notes_hash.get_size(), activation='softmax'))
+            output_layer_size = self.notes_hash.get_size()
+            model.add(Dense(output_layer_size, activation='softmax'))
             model.compile(loss='categorical_crossentropy', optimizer='adam')
-        else:
-            model.add(Dense(1))
-            model.compile(loss='mse', optimizer='adam')
+        # else:
+        #     model.add(Dense(1))
+        #     model.compile(loss='mse', optimizer='adam')
         # print(model.summary())
-        return model
+        self.model = model
 
     def train(self):
         # train the model
@@ -245,17 +239,10 @@ def main():
     path = 'classic_piano/'
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
-    notes_hash = NotesHash()
-    # real_notes_list, input_windows, target_windows = midi_preprocess(path=path + 'alb_esp1.mid', notes_hash=notes_hash,
-    #                                                                  instruments_dependencies=False,
-    #                                                                  print_info=True, separate_midi_file=False)
-    model = ModelTrainer(files=files, path=path, epochs=500, batches=128, one_hot_encode=True)
+    model = ModelTrainer(files=files, path=path, epochs=1, batches=128, one_hot_encode=True)
     model.preprocess_files()
     model.create_model()
-    # model.train()
-
-
-
+    model.train()
 
     # # model.train()
     # model.save(models_name='model_1')
