@@ -3,7 +3,7 @@
 import pretty_midi as pm
 import numpy as np
 import os
-
+import random
 from keras.engine.saving import load_model
 from keras.models import Sequential
 from keras.layers import Dense, LSTM, Activation, ReLU
@@ -139,12 +139,14 @@ class NotesHash:
 
 
 class ModelTrainer:
-    def __init__(self, files, path, epochs, batches, is_stateful=False, one_hot_encode=True):
+    def __init__(self, files, path,song_epochs , epochs, batches, is_stateful=False, one_hot_encode=True):
         self.notes_hash = NotesHash()
+        self.songs_epochs = song_epochs
         self.epochs = epochs
         self.batches = batches
         # change to files when want to go over all files
         self.files = files
+        self.total_songs_num = len(files)
         self.path = path
         self.is_stateful = is_stateful
         self.one_hot_encode = one_hot_encode
@@ -202,10 +204,18 @@ class ModelTrainer:
 
     def train(self):
         # train the model
-        for input_data, target_data in zip(self.all_songs_input_windows, self.all_songs_target_windows):
-            # print(input_data.shape)
-            # print(target_data.shape)
-            self.model.fit(input_data, target_data, batch_size=self.batches, epochs=self.epochs)
+        for i in range(self.songs_epochs):
+            print(f"####################################################################################################")
+            print(f"######################################## Songs epoch no.{i+1} ##########################################")
+            print(f"####################################################################################################")
+
+            shuffled_songs = list(zip(self.all_songs_input_windows, self.all_songs_target_windows))
+            random.shuffle(shuffled_songs)
+            for input_data, target_data in shuffled_songs:
+                # print(input_data.shape)
+                # print(target_data.shape)
+                self.model.fit(input_data, target_data, batch_size=self.batches, epochs=self.epochs)
+
 
     def generate_MIDI(self, initial_sample: list, length):
         length = length - WINDOW_SIZE
@@ -239,13 +249,13 @@ def main():
     path = 'classic_piano/'
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
-    model = ModelTrainer(files=files, path=path, epochs=1, batches=128, one_hot_encode=True)
+    model = ModelTrainer(files=files, path=path, song_epochs=100, epochs=500, batches=128, one_hot_encode=True)
     model.preprocess_files()
     model.create_model()
     model.train()
 
     # # model.train()
-    # model.save(models_name='model_1')
+    model.save(models_name='model_100_song_epochs_500_epochs_128_batch')
     # # length of the real song
     # midi_length = len(real_notes_list)
     # pred_notes_list = model.generate_MIDI([input_windows[WINDOW_SIZE]], length=midi_length)
