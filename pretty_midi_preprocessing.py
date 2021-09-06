@@ -8,7 +8,6 @@ from keras.engine.saving import load_model
 from keras.models import Sequential
 from keras.layers import Dense, LSTM, Activation, ReLU
 import matplotlib.pyplot as plt
-from copy import deepcopy
 
 # TODO Piano roll for drums!
 # TODO Add instruments join for piano roll (same instrument, same piano roll)
@@ -144,7 +143,6 @@ class ModelTrainer:
         self.songs_epochs = song_epochs
         self.epochs = epochs
         self.batches = batches
-        # change to files when want to go over all files
         self.files = files
         self.total_songs_num = len(files)
         self.path = path
@@ -152,12 +150,6 @@ class ModelTrainer:
         self.one_hot_encode = one_hot_encode
         self.all_songs_input_windows = []
         self.all_songs_target_windows = []
-        # self.num_of_batches = int(len(x) / batches)
-        # if self.is_stateful:
-        #     x = x[:self.num_of_batches * batches]
-        #     y = y[:self.num_of_batches * batches]
-        #
-        # self.preprocess_files()
         self.model = None
 
     def preprocess_files(self):
@@ -196,10 +188,11 @@ class ModelTrainer:
             output_layer_size = self.notes_hash.get_size()
             model.add(Dense(output_layer_size, activation='softmax'))
             model.compile(loss='categorical_crossentropy', optimizer='adam')
-        # else:
-        #     model.add(Dense(1))
-        #     model.compile(loss='mse', optimizer='adam')
+        else:
+            model.add(Dense(1))
+            model.compile(loss='mse', optimizer='adam')
         # print(model.summary())
+
         self.model = model
 
     def train(self):
@@ -215,6 +208,7 @@ class ModelTrainer:
                 # print(input_data.shape)
                 # print(target_data.shape)
                 self.model.fit(input_data, target_data, batch_size=self.batches, epochs=self.epochs)
+            self.model.save('model_500_song_epochs_3_epochs_128_batch')
 
 
     def generate_MIDI(self, initial_sample: list, length):
@@ -249,13 +243,13 @@ def main():
     path = 'classic_piano/'
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
-    model = ModelTrainer(files=files, path=path, song_epochs=100, epochs=500, batches=128, one_hot_encode=True)
+    model = ModelTrainer(files=files, path=path, song_epochs=200, epochs=1, batches=128, one_hot_encode=True)
     model.preprocess_files()
     model.create_model()
     model.train()
 
     # # model.train()
-    model.save(models_name='model_100_song_epochs_500_epochs_128_batch')
+    model.save(models_name='model_500_song_epochs_3_epochs_128_batch')
     # # length of the real song
     # midi_length = len(real_notes_list)
     # pred_notes_list = model.generate_MIDI([input_windows[WINDOW_SIZE]], length=midi_length)
