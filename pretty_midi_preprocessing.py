@@ -1,6 +1,7 @@
 # http: // craffel.github.io / pretty - midi /  #
 
 import pretty_midi as pm
+
 from piano_roll_to_pretty_midi import to_pretty_midi
 import numpy as np
 import os
@@ -8,13 +9,15 @@ from keras.models import Sequential
 from keras.layers import Dense, LSTM, Activation, ReLU
 import matplotlib.pyplot as plt
 
+from mido import MidiFile, MidiTrack, Message as MidiMessage
+
 # TODO Piano roll for drums!
 # TODO Add instruments join for piano roll (same instrument, same piano roll)
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
 # from tensorflow.python.keras.optimizers import RMSprop
 from keras.utils import to_categorical
 
-SAMPLING_FREQ = 5
+SAMPLING_FREQ = 1000
 WINDOW_SIZE = 50
 NUM_OF_EPOCHS = 20
 
@@ -22,12 +25,13 @@ NUM_OF_EPOCHS = 20
 def get_piano_roll(instrument, end_time):
     # All instruments get the same "times" parameter in order to make the piano roll timeline the same.
     piano_roll = instrument.get_piano_roll(fs=SAMPLING_FREQ, times=np.arange(0, end_time, 1. / SAMPLING_FREQ))
-    #### piano_roll = np.reshape(piano_roll, piano_roll.shape[1], piano_roll.shape[0])
-    #### generated_as_midi = to_pretty_midi(piano_roll)  ## piano_roll_to_pretty_midi(array_piano_roll, fs=fs)
-    #### # print("Tempo {}".format(generated_as_midi.estimate_tempo()))
-    #### for note in generated_as_midi.instruments[0].notes:
-    ####     note.velocity = 100
-    #### generated_as_midi.write("original_piano_roll.mdi")
+    # piano_roll = (piano_roll > 0).astype(int)
+    # piano_roll = np.reshape(piano_roll, (piano_roll.shape[1], piano_roll.shape[0]))
+    # generated_as_midi = to_pretty_midi(piano_roll)  ## piano_roll_to_pretty_midi(array_piano_roll, fs=fs)
+    # # print("Tempo {}".format(generated_as_midi.estimate_tempo()))
+    # for note in generated_as_midi.instruments[0].notes:
+    #     note.velocity = 100
+    # generated_as_midi.write("original_piano_roll.mid")
     return piano_roll
 
 
@@ -73,6 +77,21 @@ def midi_preprocess(path, notes_hash, instruments_dependencies=False, print_info
     end_time = midi_data.get_end_time()
     if print_info:
         print(f"\n---------- {midi_name} | {end_time:.2f} seconds -----------")
+
+    piano_roll = midi_data.get_piano_roll(fs=SAMPLING_FREQ, times=np.arange(0, end_time, 1. / SAMPLING_FREQ))
+    piano_roll = (piano_roll > 0).astype(int)
+
+    piano_roll_to_midi(piano_roll)
+    print("Saved using mido")
+
+
+    piano_roll = np.reshape(piano_roll, (piano_roll.shape[1], piano_roll.shape[0]))
+    generated_as_midi = to_pretty_midi(piano_roll, constant_tempo=60)  ## piano_roll_to_pretty_midi(array_piano_roll, fs=fs)
+    # print("Tempo {}".format(generated_as_midi.estimate_tempo()))
+    for note in generated_as_midi.instruments[0].notes:
+        note.velocity = 100
+    generated_as_midi.write("full_piano_roll.mid")
+
 
     # Separate tracks and print info
     for i, instrument in enumerate(midi_data.instruments):
@@ -223,6 +242,27 @@ class ModelTrainer:
             note.velocity = 100
         generated_as_midi.write(midi_file_name)
 
+def piano_roll_to_midi(piano_roll, base_note=21):
+    """Convert piano roll to a MIDI file."""
+    notes, frames = piano_roll.shape
+    midi = MidiFile()
+    track = MidiTrack()
+    midi.tracks.append(track)
+    now = 0
+    piano_roll = np.hstack((np.zeros((notes, 1)),
+                            piano_roll,
+                            np.zeros((notes, 1))))
+    velocity_changes = np.nonzero(np.diff(piano_roll).T)
+    for time, note in zip(*velocity_changes):
+        velocity = piano_roll[note, time + 1]
+        message = MidiMessage(
+            type='note_on' if velocity > 0 else 'note_off',
+            note=int(note + base_note),
+            velocity=int(velocity * 127),
+            time=int(time - now))
+        track.append(message)
+        now = time
+    midi.save('new_song.mid')
 
 # 10 songs --> instruments (1) --> array of windows -->16 windows per batch
 # Remember: Add one-hot encoding to target/input
