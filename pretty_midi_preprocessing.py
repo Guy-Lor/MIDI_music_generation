@@ -4,15 +4,17 @@ import pretty_midi as pm
 import numpy as np
 import os
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Activation
+from keras.layers import Dense, LSTM, Activation, ReLU
+import matplotlib.pyplot as plt
 
 # TODO Piano roll for drums!
 # TODO Add instruments join for piano roll (same instrument, same piano roll)
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
 # from tensorflow.python.keras.optimizers import RMSprop
+from keras.utils import to_categorical
 
 SAMPLING_FREQ = 5
-WINDOW_SIZE = 100
+WINDOW_SIZE = 50
 
 
 def get_piano_roll(instrument, end_time):
@@ -104,22 +106,23 @@ def midi_preprocess(path, notes_hash, instruments_dependencies=False, print_info
     # print(target_windows)
     # print(input_windows[0], target_windows[0])
 
-    return input_windows, target_windows
+    return notes_list, input_windows, target_windows
 
 
 class ModelTrainer:
-    def __init__(self, x, y, epochs, batches, is_stateful=False):
+    def __init__(self, x, y, epochs, batches, is_stateful=False, one_hot_encode=True):
         self.notes_hash = NotesHash()
         self.epochs = epochs
         self.batches = batches
         self.is_stateful = is_stateful
+        self.one_hot_encode = one_hot_encode
         self.num_of_batches = int(len(x) / batches)
         if self.is_stateful:
             x = x[:self.num_of_batches * batches]
             y = y[:self.num_of_batches * batches]
 
         self.input_data = np.reshape(x, (x.shape[0], x.shape[1], 1))
-        self.target_data = y
+        self.target_data = to_categorical(y) if one_hot_encode else y
         self.model = self.create_model()
 
     def create_model(self):
@@ -137,12 +140,17 @@ class ModelTrainer:
         # model.add(Dense(len(chars)))
         # model.add(Activation('softmax'))
 
-        model.add(Dense(50))
-        model.add(Dense(50))
-        model.add(Dense(1))
+        model.add(Dense(100))
+        model.add(ReLU())
+        model.add(Dense(100))
 
         # compile the model and pick the loss and optimizer
-        model.compile(loss='mse', optimizer='adam')
+        if self.one_hot_encode:
+            model.add(Dense(self.target_data.shape[1], activation='softmax'))
+            model.compile(loss='categorical_crossentropy', optimizer='adam')
+        else:
+            model.add(Dense(1))
+            model.compile(loss='mse', optimizer='adam')
 
         return model
 
@@ -150,7 +158,8 @@ class ModelTrainer:
         # train the model
         self.model.fit(self.input_data, self.target_data, batch_size=self.batches, epochs=self.epochs)
 
-    def generate_MIDI(self, initial_sample: list, length=1600):
+    def generate_MIDI(self, initial_sample: list, length):
+        length = length - WINDOW_SIZE
         current_window = initial_sample
         current_window_list = list(current_window[0])
 
@@ -159,7 +168,10 @@ class ModelTrainer:
             # print("Iteration: " ,i)
             current_window = np.array([current_window_list])
             current_window = np.reshape(current_window, (current_window.shape[0], current_window.shape[1], 1))
-            y = self.model.predict(current_window)
+            if self.one_hot_encode:
+                y = self.model.predict_classes(current_window)
+            else:
+                y = self.model.predict(current_window)
 
             # print("Current window length before: ", len(current_window_list))
             current_window_list += [int(y)]
@@ -185,6 +197,12 @@ class NotesHash:
             self.token_counter += 1
 
 
+def draw_compare_graph(real_input, predicted_input, time):
+    plt.scatter(range(time), real_input, c='blue', alpha=0.25)
+    plt.scatter(range(time), predicted_input, c='red', alpha=0.5)
+    plt.show()
+
+
 def main():
     path = 'blues/'
     path = 'classic_piano/'
@@ -192,17 +210,32 @@ def main():
     print(files)
     notes_hash = NotesHash()
 
-    input_windows, target_windows = midi_preprocess(path='all_blues-Miles-Davis_dz.mid', notes_hash=notes_hash, instruments_dependencies=False,
-                                                    print_info=True, separate_midi_file=False)
-    model = ModelTrainer(x=input_windows, y=target_windows, epochs=10, batches=16)
+    real_notes_list, input_windows, target_windows = midi_preprocess(path=path + 'alb_esp1.mid', notes_hash=notes_hash,
+                                                                     instruments_dependencies=False,
+                                                                     print_info=True, separate_midi_file=False)
+    model = ModelTrainer(x=input_windows, y=target_windows, epochs=1, batches=100, one_hot_encode=True)
     model.train()
-    midi = model.generate_MIDI([input_windows[WINDOW_SIZE]])
-    print(midi)
+    # length of the real song
+    midi_length = len(real_notes_list)
+    # length is actually
+    pred_notes_list = model.generate_MIDI([input_windows[WINDOW_SIZE]], length=midi_length)
+    print(real_notes_list)
+    print(pred_notes_list)
+    draw_compare_graph(real_input=real_notes_list, predicted_input=pred_notes_list, time=midi_length)
+
+    matches_count = 0
+    for real, pred in zip(real_notes_list, pred_notes_list):
+        if real == pred:
+            matches_count += 1
+    print(f"Length of song's notes is {len(real_notes_list)}")
+    print(f"There is {matches_count / len(pred_notes_list) * 100:.2f}% match between Real song and Pred of window size")
+
     # reading each midi file
     # for file in files:
     #     midi_preprocess(path + file, notes_hash=notes_hash, instruments_dependencies=False, print_info=True, separate_midi_file=False)
 
-    print(len(notes_hash.notes_dict))
+    # print(len(notes_hash.notes_dict))
+
 
 if __name__ == '__main__':
     main()
