@@ -1,6 +1,7 @@
 # http: // craffel.github.io / pretty - midi /  #
 
 import pretty_midi as pm
+from piano_roll_to_pretty_midi import to_pretty_midi
 import numpy as np
 import os
 from keras.models import Sequential
@@ -15,11 +16,18 @@ from keras.utils import to_categorical
 
 SAMPLING_FREQ = 5
 WINDOW_SIZE = 50
+NUM_OF_EPOCHS = 20
 
 
 def get_piano_roll(instrument, end_time):
     # All instruments get the same "times" parameter in order to make the piano roll timeline the same.
     piano_roll = instrument.get_piano_roll(fs=SAMPLING_FREQ, times=np.arange(0, end_time, 1. / SAMPLING_FREQ))
+    #### piano_roll = np.reshape(piano_roll, piano_roll.shape[1], piano_roll.shape[0])
+    #### generated_as_midi = to_pretty_midi(piano_roll)  ## piano_roll_to_pretty_midi(array_piano_roll, fs=fs)
+    #### # print("Tempo {}".format(generated_as_midi.estimate_tempo()))
+    #### for note in generated_as_midi.instruments[0].notes:
+    ####     note.velocity = 100
+    #### generated_as_midi.write("original_piano_roll.mdi")
     return piano_roll
 
 
@@ -110,8 +118,8 @@ def midi_preprocess(path, notes_hash, instruments_dependencies=False, print_info
 
 
 class ModelTrainer:
-    def __init__(self, x, y, epochs, batches, is_stateful=False, one_hot_encode=True):
-        self.notes_hash = NotesHash()
+    def __init__(self, x, y, notes_hash, epochs, batches, is_stateful=False, one_hot_encode=True):
+        self.notes_hash = notes_hash
         self.epochs = epochs
         self.batches = batches
         self.is_stateful = is_stateful
@@ -181,6 +189,40 @@ class ModelTrainer:
             total_song += [int(y)]
         return total_song
 
+    def write_midi_file_from_generated(self, generated, midi_file_name="result.mid", start_index=0, fs=SAMPLING_FREQ, max_generated=1000):
+        # note_string = [note_tokenizer.index_to_notes[ind_note] for ind_note in generate]
+        # array_piano_roll = np.zeros((128, max_generated + 1), dtype=np.int16)
+        # for index, note in enumerate(note_string[start_index:]):
+        #     if note == 'e':
+        #         pass
+        #     else:
+        #         splitted_note = note.split(',')
+        #         for j in splitted_note:
+        #             array_piano_roll[int(j), index] = 1
+        # generate_to_midi = piano_roll_to_pretty_midi(array_piano_roll, fs=fs)
+        # print("Tempo {}".format(generate_to_midi.estimate_tempo()))
+        # for note in generate_to_midi.instruments[0].notes:
+        #     note.velocity = 100
+        # generate_to_midi.write(midi_file_name)
+        notes_list = [self.notes_hash.reversed_notes_dict[note_key] for note_key in generated]
+        array_piano_roll = np.zeros((128, max_generated + 1), dtype=np.int16)
+        for index, note in enumerate(notes_list[start_index:]):
+            if note == 'e':
+                pass
+            else:
+                splitted_note = list(map(str.strip, note.strip('][').replace('"', '').split(' ')))#note.split(',')
+                for pitch in splitted_note:
+                    if pitch == '':
+                        continue
+                    print("Pitch: ", pitch)
+                    array_piano_roll[int(pitch), index] = 1
+        array_piano_roll = np.reshape(array_piano_roll, (array_piano_roll.shape[1], array_piano_roll.shape[0]))
+        generated_as_midi = to_pretty_midi(array_piano_roll) ## piano_roll_to_pretty_midi(array_piano_roll, fs=fs)
+        #print("Tempo {}".format(generated_as_midi.estimate_tempo()))
+        for note in generated_as_midi.instruments[0].notes:
+            note.velocity = 100
+        generated_as_midi.write(midi_file_name)
+
 
 # 10 songs --> instruments (1) --> array of windows -->16 windows per batch
 # Remember: Add one-hot encoding to target/input
@@ -213,13 +255,17 @@ def main():
     real_notes_list, input_windows, target_windows = midi_preprocess(path=path + 'alb_esp1.mid', notes_hash=notes_hash,
                                                                      instruments_dependencies=False,
                                                                      print_info=True, separate_midi_file=False)
-    model = ModelTrainer(x=input_windows, y=target_windows, epochs=1, batches=100, one_hot_encode=True)
-    model.train()
+    model = ModelTrainer(x=input_windows, y=target_windows, notes_hash=notes_hash, epochs=NUM_OF_EPOCHS, batches=100, one_hot_encode=True)
+    print("Notes hash size: ", len(notes_hash.notes_dict))
+    print("Inner notes hash size: ", len(model.notes_hash.notes_dict))
+    # model.train()
     # length of the real song
     midi_length = len(real_notes_list)
     # length is actually
-    pred_notes_list = model.generate_MIDI([input_windows[WINDOW_SIZE]], length=midi_length)
+    #pred_notes_list = model.generate_MIDI([input_windows[WINDOW_SIZE]], length=midi_length)
     print(real_notes_list)
+
+    pred_notes_list = real_notes_list
     print(pred_notes_list)
     draw_compare_graph(real_input=real_notes_list, predicted_input=pred_notes_list, time=midi_length)
 
@@ -230,6 +276,7 @@ def main():
     print(f"Length of song's notes is {len(real_notes_list)}")
     print(f"There is {matches_count / len(pred_notes_list) * 100:.2f}% match between Real song and Pred of window size")
 
+    model.write_midi_file_from_generated(pred_notes_list, "same_as_original.mid", start_index=0, fs=SAMPLING_FREQ, max_generated=midi_length)
     # reading each midi file
     # for file in files:
     #     midi_preprocess(path + file, notes_hash=notes_hash, instruments_dependencies=False, print_info=True, separate_midi_file=False)
