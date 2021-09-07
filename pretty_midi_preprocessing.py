@@ -8,7 +8,7 @@ import os
 import random
 from keras.engine.saving import model_from_json
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Activation, ReLU
+from keras.layers import Dense, LSTM, Activation, ReLU, TimeDistributed, Bidirectional
 import matplotlib.pyplot as plt
 from keras.utils import to_categorical
 
@@ -18,11 +18,11 @@ from keras.utils import to_categorical
 
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
-SAMPLING_FREQ = 20
-WINDOW_SIZE = 200
+SAMPLING_FREQ = 18
+WINDOW_SIZE = 175
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
-GENERATED_SONG_DURATION = 30
+GENERATED_SONG_DURATION = 20
 
 
 def piano_roll_to_pretty_midi(piano_roll, fs=SAMPLING_FREQ, program=0):
@@ -105,7 +105,8 @@ def get_time_note_dict(piano_roll):
 
 def get_RNN_input_target(notes_list):
     # Creates input, target np arrays in the requested window size
-    input_windows = rolling_window([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)[:-1]
+    # input_windows = rolling_window([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)[:-1]
+    input_windows = rolling_window([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)
     target_windows = rolling_window(notes_list, 1)
     input_windows = np.reshape(input_windows, (input_windows.shape[0], input_windows.shape[1], 1))
     return input_windows, target_windows
@@ -201,7 +202,7 @@ class NotesHash:
 
 
 class ModelTrainer:
-    def __init__(self, files, path, song_epochs, epochs, batches, save_weights=True, save_model=True, save_hash=True):
+    def __init__(self, files, path, model_arch='lstm', song_epochs=1, epochs=1, batches=128, save_weights=True, save_model=True, save_hash=True):
         self.notes_hash = NotesHash()
         self.songs_epochs = song_epochs
         self.epochs = epochs
@@ -215,6 +216,7 @@ class ModelTrainer:
         self.all_songs_input_windows = []
         self.all_songs_target_windows = []
         self.model = None
+        self.model_arch = model_arch
 
     def preprocess_files(self):
         all_songs_real_notes = []
@@ -237,17 +239,35 @@ class ModelTrainer:
     def create_model(self):
         # create sequential network, because we are passing activations
         # down the network
-        model = Sequential()
-        # add LSTM layer
-        model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
-        model.add(Dense(256))
-        model.add(ReLU())
-        model.add(Dense(256))
-        model.add(ReLU())
-        # compile the model and pick the loss and optimizer
         output_layer_size = self.notes_hash.get_size()
-        model.add(Dense(output_layer_size, activation='softmax'))
-        model.compile(loss='categorical_crossentropy', optimizer='adam')
+
+        if self.model_arch == 'lstm':
+            # Model 1: Regular LSTM with dense layer on last timeline (not sounds good)
+            model = Sequential()
+            model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
+            model.add(Dense(256))
+            model.add(ReLU())
+            model.add(Dense(256))
+            model.add(ReLU())
+            model.add(Dense(output_layer_size, activation='softmax'))
+            model.compile(loss='categorical_crossentropy', optimizer='adam')
+
+        if self.model_arch == 'stacked-lstm':
+            # Model 2: Stacked LSTM
+            model = Sequential()
+            model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1), return_sequences=True))
+            model.add(ReLU())
+            model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
+            model.add(Dense(output_layer_size, activation='softmax'))
+            model.compile(loss='categorical_crossentropy', optimizer='adam')
+
+        if self.model_arch == 'bi-lstm':
+            # Model 3: Bi-LSTM
+            model = Sequential()
+            model.add(Bidirectional(LSTM(self.batches, return_sequences=True), input_shape=(WINDOW_SIZE, 1), merge_mode='concat'))
+            model.add(TimeDistributed(Dense(output_layer_size, activation='relu')))
+            model.add(Dense(output_layer_size, activation='softmax'))
+            model.compile(loss='categorical_crossentropy', optimizer='adam')
 
         # print(model.summary())
         self.model = model
@@ -262,10 +282,17 @@ class ModelTrainer:
             print(f"######################################## Songs epoch no.{i + 1} ##########################################")
             print(f"####################################################################################################")
 
+            # print(self.all_songs_target_windows)
             shuffled_songs = list(zip(self.all_songs_input_windows, self.all_songs_target_windows))
             random.shuffle(shuffled_songs)
             for input_data, target_data in shuffled_songs:
-                self.model.fit(input_data, target_data, batch_size=self.batches, epochs=self.epochs)
+                fixed_input = input_data[:-1]
+
+                if self.model_arch == 'bi-lstm':
+                    bi_lstm_target = to_categorical(input_data[1:], self.notes_hash.get_size())
+                    self.model.fit(fixed_input, bi_lstm_target, batch_size=self.batches, epochs=self.epochs)
+                else:
+                    self.model.fit(fixed_input, target_data, batch_size=self.batches, epochs=self.epochs)
 
             if self.save_weights:
                 self.save_model_weights()
@@ -281,10 +308,16 @@ class ModelTrainer:
             current_window = np.reshape(current_window, (current_window.shape[0], current_window.shape[1], 1))
 
             y = self.model.predict_classes(current_window)
-
-            current_window_list += [int(y)]
-            current_window_list.pop(0)
-            total_song += [int(y)]
+            # print(y.shape)
+            # print(y[0][-1])
+            if self.model_arch == 'bi-lstm':
+                current_window_list += [int(y[0][-1])]
+                current_window_list.pop(0)
+                total_song += [int(y[0][-1])]
+            else:
+                current_window_list += [int(y)]
+                current_window_list.pop(0)
+                total_song += [int(y)]
 
         # print("Total song pred:\n", total_song)
         return total_song
@@ -356,24 +389,24 @@ def main():
     path = 'classic_piano/'
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
-    model = ModelTrainer(files=files, path=path, song_epochs=500, epochs=1, batches=384,
+    model = ModelTrainer(files=files[0:1], path=path, model_arch='bi-lstm', song_epochs=1, epochs=1, batches=256,
                          save_weights=True, save_model=True, save_hash=True)
     model.preprocess_files()
     model.create_model()
     model.train()
 
     #################### for debugging ###########################
-    # real_notes_list, input_windows, target_windows = midi_preprocess(path=path+files[0], notes_hash=model.notes_hash,
-    #                                                                  print_info=True, separate_midi_file=True)
-    # midi_length = len(real_notes_list)
-    #
-    # generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-    # print(generated)
-    # model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_1_epoch.mid",
-    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION*SAMPLING_FREQ)
-    # print(real_notes_list)
-    # model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
-    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    real_notes_list, input_windows, target_windows = midi_preprocess(path=path + files[0], notes_hash=model.notes_hash,
+                                                                     print_info=True, separate_midi_file=True)
+    midi_length = len(real_notes_list)
+
+    generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    print(generated)
+    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_1_epoch.mid",
+                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    print(real_notes_list)
+    model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
+                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     #
     # model.load_all_model()
     #
@@ -383,7 +416,6 @@ def main():
     # model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_VM_model.mid",
     #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     # #####################################################################
-
 
     # draw_compare_graph(real_input=real_notes_list, predicted_input=pred_notes_list, time=midi_length)
     # compare_real_pred_notes(real_notes_list, pred_notes_list)
