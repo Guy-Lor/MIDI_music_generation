@@ -9,7 +9,8 @@ from keras.models import Sequential
 from keras.layers import Dense, LSTM, Activation, ReLU
 import matplotlib.pyplot as plt
 from keras.utils import to_categorical
-from tensorflow_core.python.keras.models import model_from_json
+#from tensorflow_core.python.keras.models import model_from_json
+from keras.engine.saving import model_from_json
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
 
@@ -207,14 +208,20 @@ class ModelTrainer:
 
     def preprocess_files(self):
         all_songs_real_notes = []
+        temp_all_songs_input_windows = []
         temp_all_songs_target_windows = []
 
         for file in self.files:
             real_notes_list, input_windows, target_windows = midi_preprocess(path=self.path + file, notes_hash=self.notes_hash,
                                                                              print_info=True, separate_midi_file=False)
-            self.all_songs_input_windows += [input_windows]
+            #self.all_songs_input_windows += [input_windows]
+            temp_all_songs_input_windows += [input_windows]
             temp_all_songs_target_windows += [target_windows]
             all_songs_real_notes += [real_notes_list]
+
+        for input in temp_all_songs_input_windows:
+            input = to_categorical(input, num_classes=self.notes_hash.get_size())
+            self.all_songs_input_windows += [input]
 
         for target in temp_all_songs_target_windows:
             target = to_categorical(target, num_classes=self.notes_hash.get_size())
@@ -228,7 +235,7 @@ class ModelTrainer:
         # down the network
         model = Sequential()
         # add LSTM layer
-        model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
+        model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, self.notes_hash.get_size())))
         model.add(Dense(256))
         model.add(ReLU())
         model.add(Dense(256))
