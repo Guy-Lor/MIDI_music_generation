@@ -1,26 +1,28 @@
 # http: // craffel.github.io / pretty - midi /  #
+# TODO Multiple instruments (Take all piano rolls, transfer into hashnotes with program association for each one and make huge train with 128 (plus drums) X 1 for time line and create reverse dict with respet to instrument)
 
 import pickle
 import pretty_midi as pm
 import numpy as np
 import os
 import random
+from keras.engine.saving import model_from_json
 from keras.models import Sequential
 from keras.layers import Dense, LSTM, Activation, ReLU
 import matplotlib.pyplot as plt
 from keras.utils import to_categorical
-from tensorflow_core.python.keras.models import model_from_json
+
+# Uncomment if you want to make sure you have GPU in your devices
+# from tensorflow_core.python.client import device_lib
+# print(device_lib.list_local_devices())
+
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
-
-
 SAMPLING_FREQ = 20
 WINDOW_SIZE = 200
 VELOCITY_CONST = 64
-# duration in seconds
-GENERATED_SONG_DURATION = 23
-
-
+# The duration of the song we want to be generated (in seconds)
+GENERATED_SONG_DURATION = 30
 
 
 def piano_roll_to_pretty_midi(piano_roll, fs=SAMPLING_FREQ, program=0):
@@ -164,14 +166,23 @@ def midi_preprocess(path, notes_hash, print_info=False, separate_midi_file=False
     return notes_list, input_windows, target_windows
 
 
+def compare_real_pred_notes(real_notes_list, pred_notes_list):
+    matches_count = 0
+    for real, pred in zip(real_notes_list, pred_notes_list):
+        if real == pred:
+            matches_count += 1
+    print("Real song:                   ", real_notes_list)
+    print("Pred song (Trained model):   ", pred_notes_list)
+    print(f"Length of song's notes is {len(real_notes_list)}")
+    print(f"There is {matches_count / len(pred_notes_list) * 100:.2f}% match between Real song and Pred of window size")
+
+
 def draw_compare_graph(real_input, predicted_input, time):
     plt.scatter(range(time), real_input, c='blue', alpha=0.25)
     plt.scatter(range(time), predicted_input, c='red', alpha=0.5)
     plt.show()
 
 
-# 10 songs --> instruments (1) --> array of windows -->16 windows per batch
-# Remember: Add one-hot encoding to target/input
 class NotesHash:
     def __init__(self):
         self.notes_dict = {'e': 0}
@@ -329,6 +340,7 @@ class ModelTrainer:
         file_to_read = open(path, "rb")
         loaded_object = pickle.load(file_to_read)
         file_to_read.close()
+        print(self.notes_hash.reversed_notes_dict)
         self.notes_hash = loaded_object
         print("Loaded Notes_hash from disk...")
 
@@ -344,53 +356,38 @@ def main():
     path = 'classic_piano/'
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
-    model = ModelTrainer(files=files[2:3], path=path, song_epochs=1, epochs=1, batches=128,
-                         save_weights=False, save_model=False, save_hash=False)
+    model = ModelTrainer(files=files, path=path, song_epochs=500, epochs=1, batches=384,
+                         save_weights=True, save_model=True, save_hash=True)
     model.preprocess_files()
     model.create_model()
     model.train()
 
-    #################### for debugging ############################
-    real_notes_list, input_windows, target_windows = midi_preprocess(path='classic_piano/alb_esp3.mid', notes_hash=model.notes_hash,
-                                                                     print_info=True, separate_midi_file=False)
-    midi_length = len(real_notes_list)
-
-    generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=midi_length)
-
-    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_1_epoch.mid",
-                                         start_index=0, max_generated=GENERATED_SONG_DURATION*SAMPLING_FREQ)
-
-    model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
-                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-
-    model.load_all_model()
-    generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=midi_length)
-    # generated = model.generate_MIDI([1]*49 + [2], length=midi_length)
-    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_VM_model.mid",
-                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    #################### for debugging ###########################
+    # real_notes_list, input_windows, target_windows = midi_preprocess(path=path+files[0], notes_hash=model.notes_hash,
+    #                                                                  print_info=True, separate_midi_file=True)
+    # midi_length = len(real_notes_list)
+    #
+    # generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    # print(generated)
+    # model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_1_epoch.mid",
+    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION*SAMPLING_FREQ)
+    # print(real_notes_list)
+    # model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
+    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    #
+    # model.load_all_model()
+    #
+    # generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=midi_length)
+    # print(generated)
+    # # generated = model.generate_MIDI([1]*49 + [2], length=midi_length)
+    # model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_VM_model.mid",
+    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     # #####################################################################
 
 
-    # TODO Loading model in func
-    # TODO Multiple instruments (Take all piano rolls, transfer into hashnotes with program association for each one and make huge train with 128 (plus drums) X 1 for time line and create reverse dict with respet to instrument)
-
-
     # draw_compare_graph(real_input=real_notes_list, predicted_input=pred_notes_list, time=midi_length)
-    pred_notes_list = generated
-    matches_count = 0
-    for real, pred in zip(real_notes_list, pred_notes_list):
-        if real == pred:
-            matches_count += 1
-    print("Real song:                   ", real_notes_list)
-    print("Pred song (Trained model):   ", pred_notes_list)
-    print(f"Length of song's notes is {len(real_notes_list)}")
-    print(f"There is {matches_count / len(pred_notes_list) * 100:.2f}% match between Real song and Pred of window size")
-
-    # # reading each midi file
-    # # for file in files:
-    # #     real_notes_list, input_windows, target_windows = midi_preprocess(path + file, notes_hash=notes_hash, print_info=True, separate_midi_file=False)
-    #
-    # # print(len(notes_hash.notes_dict))
+    # compare_real_pred_notes(real_notes_list, pred_notes_list)
+    # pred_notes_list = generated
 
 
 if __name__ == '__main__':
