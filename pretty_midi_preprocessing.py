@@ -23,6 +23,7 @@ WINDOW_SIZE = 200
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
 GENERATED_SONG_DURATION = 30
+NUM_OF_EPOCHS = 100
 
 
 def piano_roll_to_pretty_midi(piano_roll, fs=SAMPLING_FREQ, program=0):
@@ -266,7 +267,7 @@ class ModelTrainer:
         # train the model
         for i in range(self.songs_epochs):
             print(f"####################################################################################################")
-            print(f"######################################## Songs epoch no.{i + 1} ##########################################")
+            print(f"################################### Songs epoch no.{i + 1} / {NUM_OF_EPOCHS} #####################################")
             print(f"####################################################################################################")
 
             shuffled_songs = list(zip(self.all_songs_input_windows, self.all_songs_target_windows))
@@ -363,7 +364,7 @@ def main():
     path = 'classic_piano/'
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
-    model = ModelTrainer(files=files, path=path, song_epochs=500, epochs=1, batches=384,
+    model = ModelTrainer(files=files, path=path, song_epochs=NUM_OF_EPOCHS, epochs=1, batches=384,
                          save_weights=True, save_model=True, save_hash=True)
     model.preprocess_files()
     model.create_model()
