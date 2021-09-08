@@ -6,7 +6,8 @@ import pretty_midi as pm
 import numpy as np
 import os
 import random
-from keras.engine.saving import model_from_json
+from tensorflow.keras.models import model_from_json
+#from keras.engine.saving import model_from_json
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Activation, ReLU
 import matplotlib.pyplot as plt
@@ -383,7 +384,7 @@ def main():
     model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
                                          start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
 
-    model.load_all_model()
+    model.load_all_model(struct_path="model1.json", weights_path="model_weights1.h5", hash_path="Notes_hash1.pickle")
 
     generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=midi_length)
     print(generated)
