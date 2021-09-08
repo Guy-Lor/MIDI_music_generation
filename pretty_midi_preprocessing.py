@@ -397,8 +397,8 @@ def main():
     model.preprocess_files()
     model.create_model()
     model.load_all_model()
-    model.model.compile(loss='categorical_crossentropy', optimizer='adam')
-    model.train()
+    # model.model.compile(loss='categorical_crossentropy', optimizer='adam')
+    # model.train()
 
     #################### for debugging ###########################
     real_notes_list, input_windows, target_windows = midi_preprocess(path=path + files[0], notes_hash=model.notes_hash,
@@ -423,7 +423,7 @@ def main():
     # # #####################################################################
     #
     # # draw_compare_graph(real_input=real_notes_list, predicted_input=pred_notes_list, time=midi_length)
-    compare_real_pred_notes(real_notes_list, generated)
+    # compare_real_pred_notes(real_notes_list, generated)
     # # pred_notes_list = generated
     #
 
