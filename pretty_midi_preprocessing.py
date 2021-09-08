@@ -371,7 +371,7 @@ def main():
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
     model = ModelTrainer(files=files, path=path, song_epochs=NUM_OF_EPOCHS, epochs=1, batches=384,
-                         save_weights=True, save_model=True, save_hash=True)
+                         save_weights=False, save_model=False, save_hash=False)
     model.preprocess_files()
     model.create_model()
     #model.train()
@@ -383,20 +383,23 @@ def main():
 
     random_starting_sample = get_random_sample(notes=model.notes_hash.notes_dict, sample_length=WINDOW_SIZE)
 
-    generated = model.generate_MIDI(random_starting_sample, length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-    print(generated)
-    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_1_epoch.mid",
-                                         start_index=0, max_generated=GENERATED_SONG_DURATION*SAMPLING_FREQ)
-    print(real_notes_list)
-    model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
-                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    # generated = model.generate_MIDI(random_starting_sample, length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    # print(generated)
+    # model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_1_epoch.mid",
+    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION*SAMPLING_FREQ)
+    # print(real_notes_list)
+    # model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
+    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
 
     model.load_all_model(struct_path="model1.json", weights_path="model_weights1.h5", hash_path="Notes_hash1.pickle")
 
-    generated = model.generate_MIDI(random_starting_sample, length=midi_length)
+    #generated = model.generate_MIDI(random_starting_sample, length=midi_length)
+    #print(generated)
+    initial_sample = [0]*(WINDOW_SIZE) + [2, 2, 2, 2, 2, 3, 4, 4, 4, 4, 3, 3, 3, 5, 5, 5, 7, 7]
+    initial_sample = initial_sample[-WINDOW_SIZE:]
+    generated = model.generate_MIDI(initial_sample, length=midi_length)
     print(generated)
-    # generated = model.generate_MIDI([1]*49 + [2], length=midi_length)
-    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_VM_model.mid",
+    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_hardcoded_sample_VM_model.mid",
                                          start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     # #####################################################################
 
