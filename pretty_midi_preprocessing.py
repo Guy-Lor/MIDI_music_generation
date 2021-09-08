@@ -143,7 +143,9 @@ def midi_preprocess(path, notes_hash, print_info=False, separate_midi_file=False
             instrument_midi.write(f'{midi_name}_{i}_instrument.mid')
 
     ############################# Reminder from here on we only use 1 instrument !!! #############################################
-    dict_keys_time = get_time_note_dict(instruments_piano_roll[0])
+    #dict_keys_time = get_time_note_dict(instruments_piano_roll[0])
+    all_instruments_piano_roll = get_piano_roll(midi_data, end_time)
+    dict_keys_time = get_time_note_dict(all_instruments_piano_roll)
 
     for key in dict_keys_time.keys():
         # print(str(dict_keys_time[key]))
