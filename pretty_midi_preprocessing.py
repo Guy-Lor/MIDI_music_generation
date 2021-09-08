@@ -18,11 +18,11 @@ from keras.utils import to_categorical
 
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
-SAMPLING_FREQ = 18
-WINDOW_SIZE = 175
+SAMPLING_FREQ = 20
+WINDOW_SIZE = 180
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
-GENERATED_SONG_DURATION = 20
+GENERATED_SONG_DURATION = 30
 
 
 def piano_roll_to_pretty_midi(piano_roll, fs=SAMPLING_FREQ, program=0):
@@ -174,6 +174,8 @@ def compare_real_pred_notes(real_notes_list, pred_notes_list):
             matches_count += 1
     print("Real song:                   ", real_notes_list)
     print("Pred song (Trained model):   ", pred_notes_list)
+    print("Window:                      ", real_notes_list[:WINDOW_SIZE])
+
     print(f"Length of song's notes is {len(real_notes_list)}")
     print(f"There is {matches_count / len(pred_notes_list) * 100:.2f}% match between Real song and Pred of window size")
 
@@ -256,8 +258,9 @@ class ModelTrainer:
             # Model 2: Stacked LSTM
             model = Sequential()
             model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1), return_sequences=True))
-            model.add(ReLU())
             model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
+            model.add(Dense(256))
+            model.add(ReLU())
             model.add(Dense(output_layer_size, activation='softmax'))
             model.compile(loss='categorical_crossentropy', optimizer='adam')
 
@@ -265,7 +268,7 @@ class ModelTrainer:
             # Model 3: Bi-LSTM
             model = Sequential()
             model.add(Bidirectional(LSTM(self.batches, return_sequences=True), input_shape=(WINDOW_SIZE, 1), merge_mode='concat'))
-            model.add(TimeDistributed(Dense(output_layer_size, activation='relu')))
+            model.add(TimeDistributed(Dense(output_layer_size, activation='sigmoid')))
             model.add(Dense(output_layer_size, activation='softmax'))
             model.compile(loss='categorical_crossentropy', optimizer='adam')
 
@@ -373,7 +376,7 @@ class ModelTrainer:
         file_to_read = open(path, "rb")
         loaded_object = pickle.load(file_to_read)
         file_to_read.close()
-        print(self.notes_hash.reversed_notes_dict)
+        # print(self.notes_hash.reversed_notes_dict)
         self.notes_hash = loaded_object
         print("Loaded Notes_hash from disk...")
 
@@ -389,38 +392,40 @@ def main():
     path = 'classic_piano/'
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
-    model = ModelTrainer(files=files[0:1], path=path, model_arch='bi-lstm', song_epochs=1, epochs=1, batches=256,
+    model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=250, epochs=2, batches=256,
                          save_weights=True, save_model=True, save_hash=True)
     model.preprocess_files()
     model.create_model()
+    model.load_all_model()
+    model.model.compile(loss='categorical_crossentropy', optimizer='adam')
     model.train()
 
     #################### for debugging ###########################
     real_notes_list, input_windows, target_windows = midi_preprocess(path=path + files[0], notes_hash=model.notes_hash,
-                                                                     print_info=True, separate_midi_file=True)
-    midi_length = len(real_notes_list)
-
+                                                                     print_info=True, separate_midi_file=False)
+    # # midi_length = len(real_notes_list)
+    #
     generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     print(generated)
-    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_1_epoch.mid",
+    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_model.mid",
                                          start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     print(real_notes_list)
     model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
                                          start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     #
     # model.load_all_model()
+    # #
+    # generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    print(generated)
+    generated = model.generate_MIDI([1]*179 + [2], length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_one_note.mid",
+                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    # # #####################################################################
     #
-    # generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=midi_length)
-    # print(generated)
-    # # generated = model.generate_MIDI([1]*49 + [2], length=midi_length)
-    # model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_VM_model.mid",
-    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-    # #####################################################################
-
-    # draw_compare_graph(real_input=real_notes_list, predicted_input=pred_notes_list, time=midi_length)
-    # compare_real_pred_notes(real_notes_list, pred_notes_list)
-    # pred_notes_list = generated
-
+    # # draw_compare_graph(real_input=real_notes_list, predicted_input=pred_notes_list, time=midi_length)
+    compare_real_pred_notes(real_notes_list, generated)
+    # # pred_notes_list = generated
+    #
 
 if __name__ == '__main__':
     main()
