@@ -360,6 +360,11 @@ class ModelTrainer:
         print("---Loading completed---")
 
 
+def get_random_sample(notes: dict, sample_length):
+    sample = [random.choice(list(notes.values())) for i in range(sample_length)]
+    return sample
+
+
 def main():
     path = 'blues/'
     path = 'classic_piano/'
@@ -376,7 +381,9 @@ def main():
                                                                      print_info=True, separate_midi_file=True)
     midi_length = len(real_notes_list)
 
-    generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    random_starting_sample = get_random_sample(notes=model.notes_hash.notes_dict, sample_length=WINDOW_SIZE)
+
+    generated = model.generate_MIDI(random_starting_sample, length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     print(generated)
     model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_1_epoch.mid",
                                          start_index=0, max_generated=GENERATED_SONG_DURATION*SAMPLING_FREQ)
@@ -386,7 +393,7 @@ def main():
 
     model.load_all_model(struct_path="model1.json", weights_path="model_weights1.h5", hash_path="Notes_hash1.pickle")
 
-    generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=midi_length)
+    generated = model.generate_MIDI(random_starting_sample, length=midi_length)
     print(generated)
     # generated = model.generate_MIDI([1]*49 + [2], length=midi_length)
     model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_VM_model.mid",
