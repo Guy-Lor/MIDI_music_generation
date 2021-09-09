@@ -19,8 +19,8 @@ from keras.utils import to_categorical
 
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
-SAMPLING_FREQ = 20
-WINDOW_SIZE = 200
+SAMPLING_FREQ = 10
+WINDOW_SIZE = 50
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
 GENERATED_SONG_DURATION = 30
@@ -378,7 +378,7 @@ def main():
 
     #################### for debugging ###########################
     real_notes_list, input_windows, target_windows = midi_preprocess(path=path+files[0], notes_hash=model.notes_hash,
-                                                                     print_info=True, separate_midi_file=True)
+                                                                     print_info=False, separate_midi_file=True)
     midi_length = len(real_notes_list)
 
     random_starting_sample = get_random_sample(notes=model.notes_hash.notes_dict, sample_length=WINDOW_SIZE)
@@ -391,15 +391,32 @@ def main():
     # model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
     #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
 
-    model.load_all_model(struct_path="model1.json", weights_path="model_weights1.h5", hash_path="Notes_hash1.pickle")
+    model.load_all_model()
+    #model.load_all_model(struct_path="model1.json", weights_path="model_weights1.h5", hash_path="Notes_hash1.pickle")
 
     #generated = model.generate_MIDI(random_starting_sample, length=midi_length)
     #print(generated)
-    initial_sample = [0]*(WINDOW_SIZE) + [2, 2, 2, 2, 2, 3, 4, 4, 4, 4, 3, 3, 3, 5, 5, 5, 7, 7]
+
+    initial_sample = [0] * (WINDOW_SIZE - 1) + [2]
+    generated = model.generate_MIDI(initial_sample, length=midi_length)
+    print(generated)
+    model.write_midi_file_from_generated(generated,
+                                         midi_file_name="Generated_from_single_note_VM_model_1024.mid",
+                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+
+    #[0]*(WINDOW_SIZE) +
+    initial_sample = [2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 5, 5, 5, 7, 7, 7, 7, 10, 10, 10, 10, 10, 10, 9, 9, 6, 6, 6, 6, 1, 1, 1, 1, 1, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 1, 1, 4, 4, 4, 4, 11, 11, 11, 11, 15, 15, 15, 15, 20, 20, 20, 20]*20
     initial_sample = initial_sample[-WINDOW_SIZE:]
     generated = model.generate_MIDI(initial_sample, length=midi_length)
     print(generated)
-    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_hardcoded_sample_VM_model.mid",
+    model.write_midi_file_from_generated(generated,
+                                         midi_file_name="Generated_from_hardcoded_sample_VM_model_1024.mid",
+                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+
+    initial_sample = real_notes_list[:WINDOW_SIZE]
+    generated = model.generate_MIDI(initial_sample, length=midi_length)
+    print(generated)
+    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_real_sample_VM_model_1024.mid",
                                          start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     # #####################################################################
 
