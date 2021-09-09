@@ -8,7 +8,7 @@ import os
 import random
 from keras.engine.saving import model_from_json
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Activation, ReLU, TimeDistributed, Bidirectional
+from keras.layers import Dense, LSTM, Activation, ReLU, TimeDistributed, Bidirectional, Embedding, Flatten
 import matplotlib.pyplot as plt
 from keras.utils import to_categorical
 
@@ -19,10 +19,10 @@ from keras.utils import to_categorical
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
 SAMPLING_FREQ = 20
-WINDOW_SIZE = 180
+WINDOW_SIZE = 200
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
-GENERATED_SONG_DURATION = 30
+GENERATED_SONG_DURATION = 60
 
 
 def piano_roll_to_pretty_midi(piano_roll, fs=SAMPLING_FREQ, program=0):
@@ -204,7 +204,7 @@ class NotesHash:
 
 
 class ModelTrainer:
-    def __init__(self, files, path, model_arch='lstm', song_epochs=1, epochs=1, batches=128, save_weights=True, save_model=True, save_hash=True):
+    def __init__(self, files, path, model_arch='lstm', song_epochs=1, epochs=1, batches=128, save_weights=True, save_model=True, save_hash=True, one_hot_input=False):
         self.notes_hash = NotesHash()
         self.songs_epochs = song_epochs
         self.epochs = epochs
@@ -217,23 +217,32 @@ class ModelTrainer:
         self.save_model = save_model
         self.all_songs_input_windows = []
         self.all_songs_target_windows = []
+        self.one_hot_input = one_hot_input
         self.model = None
         self.model_arch = model_arch
 
     def preprocess_files(self):
         all_songs_real_notes = []
         temp_all_songs_target_windows = []
+        temp_all_songs_input_windows =[]
 
         for file in self.files:
             real_notes_list, input_windows, target_windows = midi_preprocess(path=self.path + file, notes_hash=self.notes_hash,
                                                                              print_info=True, separate_midi_file=False)
+            temp_all_songs_input_windows += [input_windows]
             self.all_songs_input_windows += [input_windows]
             temp_all_songs_target_windows += [target_windows]
             all_songs_real_notes += [real_notes_list]
+        if self.one_hot_input:
 
-        for target in temp_all_songs_target_windows:
-            target = to_categorical(target, num_classes=self.notes_hash.get_size())
-            self.all_songs_target_windows += [target]
+            for input_window in temp_all_songs_input_windows:
+                input_window = to_categorical(input_window, num_classes=self.notes_hash.get_size())
+                self.all_songs_input_windows += [input_window]
+        else:
+            for target in temp_all_songs_target_windows:
+                target = to_categorical(target, num_classes=self.notes_hash.get_size())
+                print(len(target[0]))
+                self.all_songs_target_windows += [target]
 
         if self.save_hash:
             self.save_notes_hash()
@@ -242,11 +251,15 @@ class ModelTrainer:
         # create sequential network, because we are passing activations
         # down the network
         output_layer_size = self.notes_hash.get_size()
+        print("outpot", output_layer_size)
 
         if self.model_arch == 'lstm':
             # Model 1: Regular LSTM with dense layer on last timeline (not sounds good)
             model = Sequential()
-            model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
+            if self.one_hot_input:
+                model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, output_layer_size)))
+            else:
+                model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
             model.add(Dense(256))
             model.add(ReLU())
             model.add(Dense(256))
@@ -257,9 +270,11 @@ class ModelTrainer:
         if self.model_arch == 'stacked-lstm':
             # Model 2: Stacked LSTM
             model = Sequential()
+            # model.add(Flatten())
+            # model.add(Embedding(self.notes_hash.get_size(), 100, input_length=WINDOW_SIZE))
             model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1), return_sequences=True))
             model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
-            model.add(Dense(256))
+            model.add(Dense(512))
             model.add(ReLU())
             model.add(Dense(output_layer_size, activation='softmax'))
             model.compile(loss='categorical_crossentropy', optimizer='adam')
@@ -267,10 +282,10 @@ class ModelTrainer:
         if self.model_arch == 'bi-lstm':
             # Model 3: Bi-LSTM
             model = Sequential()
-            model.add(Bidirectional(LSTM(self.batches, return_sequences=True), input_shape=(WINDOW_SIZE, 1), merge_mode='concat'))
+            model.add(Bidirectional(LSTM(self.batches, return_sequences=True), input_shape=(WINDOW_SIZE, 1)))
             model.add(TimeDistributed(Dense(output_layer_size, activation='sigmoid')))
             model.add(Dense(output_layer_size, activation='softmax'))
-            model.compile(loss='categorical_crossentropy', optimizer='adam')
+            model.compile(loss='categorical_crossentropy', optimizer='Adam')
 
         # print(model.summary())
         self.model = model
@@ -289,6 +304,7 @@ class ModelTrainer:
             shuffled_songs = list(zip(self.all_songs_input_windows, self.all_songs_target_windows))
             random.shuffle(shuffled_songs)
             for input_data, target_data in shuffled_songs:
+                print(len(target_data[0]))
                 fixed_input = input_data[:-1]
 
                 if self.model_arch == 'bi-lstm':
@@ -390,14 +406,15 @@ class ModelTrainer:
 def main():
     path = 'blues/'
     path = 'classic_piano/'
+    # path = 'partial_piano/'
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
-    model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=250, epochs=2, batches=256,
+    model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=500, epochs=1, batches=256,
                          save_weights=True, save_model=True, save_hash=True)
     model.preprocess_files()
     model.create_model()
-    model.load_all_model()
-    model.model.compile(loss='categorical_crossentropy', optimizer='adam')
+    # model.load_all_model()
+    # model.model.compile(loss='categorical_crossentropy', optimizer='adam')
     model.train()
 
     #################### for debugging ###########################
@@ -409,6 +426,7 @@ def main():
     print(generated)
     model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_model.mid",
                                          start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    model_generated = generated
     print(real_notes_list)
     model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
                                          start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
@@ -417,15 +435,16 @@ def main():
     # #
     # generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     print(generated)
-    generated = model.generate_MIDI([1]*179 + [2], length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    generated = model.generate_MIDI([0] * (WINDOW_SIZE - 1) + [2], length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_one_note.mid",
                                          start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     # # #####################################################################
     #
     # # draw_compare_graph(real_input=real_notes_list, predicted_input=pred_notes_list, time=midi_length)
-    compare_real_pred_notes(real_notes_list, generated)
+    compare_real_pred_notes(real_notes_list[:GENERATED_SONG_DURATION * SAMPLING_FREQ], model_generated[:GENERATED_SONG_DURATION * SAMPLING_FREQ])
     # # pred_notes_list = generated
     #
+
 
 if __name__ == '__main__':
     main()
