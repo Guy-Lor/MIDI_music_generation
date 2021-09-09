@@ -6,9 +6,8 @@ import pretty_midi as pm
 import numpy as np
 import os
 import random
-from keras.engine.saving import model_from_json
-from keras.models import Sequential
-from keras.layers import Dense, LSTM, Activation, ReLU, TimeDistributed, Bidirectional, Embedding, Flatten
+from tensorflow.keras.models import Sequential, model_from_json
+from tensorflow.keras.layers import Dense, LSTM, Activation, ReLU, TimeDistributed, Bidirectional, Embedding, Flatten
 import matplotlib.pyplot as plt
 from keras.utils import to_categorical
 
@@ -22,7 +21,8 @@ SAMPLING_FREQ = 20
 WINDOW_SIZE = 200
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
-GENERATED_SONG_DURATION = 60
+GENERATED_SONG_DURATION = 30
+NUM_OF_EPOCHS = 100
 
 
 def piano_roll_to_pretty_midi(piano_roll, fs=SAMPLING_FREQ, program=0):
@@ -106,7 +106,8 @@ def get_time_note_dict(piano_roll):
 def get_RNN_input_target(notes_list):
     # Creates input, target np arrays in the requested window size
     # input_windows = rolling_window([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)[:-1]
-    input_windows = rolling_window([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)
+    # If there are any bugs here --> it's Guy's fault!!
+    input_windows = rolling_window([0] * WINDOW_SIZE + notes_list, WINDOW_SIZE)
     target_windows = rolling_window(notes_list, 1)
     input_windows = np.reshape(input_windows, (input_windows.shape[0], input_windows.shape[1], 1))
     return input_windows, target_windows
@@ -144,7 +145,9 @@ def midi_preprocess(path, notes_hash, print_info=False, separate_midi_file=False
             instrument_midi.write(f'{midi_name}_{i}_instrument.mid')
 
     ############################# Reminder from here on we only use 1 instrument !!! #############################################
-    dict_keys_time = get_time_note_dict(instruments_piano_roll[0])
+    #dict_keys_time = get_time_note_dict(instruments_piano_roll[0])
+    all_instruments_piano_roll = get_piano_roll(midi_data, end_time)
+    dict_keys_time = get_time_note_dict(all_instruments_piano_roll)
 
     for key in dict_keys_time.keys():
         # print(str(dict_keys_time[key]))
@@ -229,20 +232,13 @@ class ModelTrainer:
         for file in self.files:
             real_notes_list, input_windows, target_windows = midi_preprocess(path=self.path + file, notes_hash=self.notes_hash,
                                                                              print_info=True, separate_midi_file=False)
-            temp_all_songs_input_windows += [input_windows]
             self.all_songs_input_windows += [input_windows]
             temp_all_songs_target_windows += [target_windows]
             all_songs_real_notes += [real_notes_list]
-        if self.one_hot_input:
 
-            for input_window in temp_all_songs_input_windows:
-                input_window = to_categorical(input_window, num_classes=self.notes_hash.get_size())
-                self.all_songs_input_windows += [input_window]
-        else:
-            for target in temp_all_songs_target_windows:
-                target = to_categorical(target, num_classes=self.notes_hash.get_size())
-                print(len(target[0]))
-                self.all_songs_target_windows += [target]
+        for target in temp_all_songs_target_windows:
+            target = to_categorical(target, num_classes=self.notes_hash.get_size())
+            self.all_songs_target_windows += [target]
 
         if self.save_hash:
             self.save_notes_hash()
@@ -256,10 +252,7 @@ class ModelTrainer:
         if self.model_arch == 'lstm':
             # Model 1: Regular LSTM with dense layer on last timeline (not sounds good)
             model = Sequential()
-            if self.one_hot_input:
-                model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, output_layer_size)))
-            else:
-                model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
+            model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
             model.add(Dense(256))
             model.add(ReLU())
             model.add(Dense(256))
@@ -297,10 +290,9 @@ class ModelTrainer:
         # train the model
         for i in range(self.songs_epochs):
             print(f"####################################################################################################")
-            print(f"######################################## Songs epoch no.{i + 1} ##########################################")
+            print(f"################################### Songs epoch no.{i + 1} / {NUM_OF_EPOCHS} #####################################")
             print(f"####################################################################################################")
 
-            # print(self.all_songs_target_windows)
             shuffled_songs = list(zip(self.all_songs_input_windows, self.all_songs_target_windows))
             random.shuffle(shuffled_songs)
             for input_data, target_data in shuffled_songs:
@@ -406,10 +398,9 @@ class ModelTrainer:
 def main():
     path = 'blues/'
     path = 'classic_piano/'
-    # path = 'partial_piano/'
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
-    model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=500, epochs=1, batches=256,
+    model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=NUM_OF_EPOCHS, epochs=1, batches=256,
                          save_weights=True, save_model=True, save_hash=True)
     model.preprocess_files()
     model.create_model()
