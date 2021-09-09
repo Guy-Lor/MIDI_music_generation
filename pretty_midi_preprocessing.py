@@ -6,8 +6,7 @@ import pretty_midi as pm
 import numpy as np
 import os
 import random
-from keras.engine.saving import model_from_json
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential, model_from_json
 from tensorflow.keras.layers import Dense, LSTM, Activation, ReLU
 import matplotlib.pyplot as plt
 from keras.utils import to_categorical
