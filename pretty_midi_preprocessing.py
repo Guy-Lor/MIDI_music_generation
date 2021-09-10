@@ -17,12 +17,12 @@ from keras.utils import to_categorical
 
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
-SAMPLING_FREQ = 20
+SAMPLING_FREQ = 12
 WINDOW_SIZE = 200
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
 GENERATED_SONG_DURATION = 30
-NUM_OF_EPOCHS = 100
+NUM_OF_EPOCHS = 1000
 
 
 def piano_roll_to_pretty_midi(piano_roll, fs=SAMPLING_FREQ, program=0):
@@ -265,10 +265,9 @@ class ModelTrainer:
             model = Sequential()
             # model.add(Flatten())
             # model.add(Embedding(self.notes_hash.get_size(), 100, input_length=WINDOW_SIZE))
+            print("Runnnign in Stacked-LSTM mode")
             model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1), return_sequences=True))
             model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
-            model.add(Dense(512))
-            model.add(ReLU())
             model.add(Dense(output_layer_size, activation='softmax'))
             model.compile(loss='categorical_crossentropy', optimizer='adam')
 
@@ -305,8 +304,8 @@ class ModelTrainer:
                 else:
                     self.model.fit(fixed_input, target_data, batch_size=self.batches, epochs=self.epochs)
 
-            if self.save_weights:
-                self.save_model_weights()
+            if self.save_weights and (i + 1) % 100 == 0:
+                self.save_model_weights(epochs_num=str(i+1))
 
     def generate_MIDI(self, initial_sample: list, length):
         length = length - WINDOW_SIZE
@@ -356,8 +355,8 @@ class ModelTrainer:
         with open(saved_name, "w") as json_file:
             json_file.write(model_json)
 
-    def save_model_weights(self, saved_name='model_weights.h5'):
-        self.model.save_weights(saved_name)
+    def save_model_weights(self, epochs_num, saved_name='model_weights.h5',):
+        self.model.save_weights(epochs_num+ "_" + saved_name)
 
     def save_notes_hash(self, saved_name="Notes_hash.pickle"):
 
@@ -398,6 +397,7 @@ class ModelTrainer:
 def main():
     path = 'blues/'
     path = 'classic_piano/'
+    path = 'classic_piano_large/'
     files = [i for i in os.listdir(path) if i.endswith(".mid")]
     print(files)
     model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=NUM_OF_EPOCHS, epochs=1, batches=256,
