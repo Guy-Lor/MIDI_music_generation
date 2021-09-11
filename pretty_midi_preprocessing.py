@@ -9,7 +9,7 @@ import random
 from tensorflow.keras.models import model_from_json
 #from keras.engine.saving import model_from_json
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, LSTM, Activation, ReLU
+from tensorflow.keras.layers import Dense, LSTM, Activation, ReLU, TimeDistributed, Bidirectional, Embedding, Flatten, Conv1D, MaxPooling1D
 import matplotlib.pyplot as plt
 from keras.utils import to_categorical
 
@@ -19,8 +19,8 @@ from keras.utils import to_categorical
 
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
-SAMPLING_FREQ = 10
-WINDOW_SIZE = 50
+SAMPLING_FREQ = 20
+WINDOW_SIZE = 200
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
 GENERATED_SONG_DURATION = 30
