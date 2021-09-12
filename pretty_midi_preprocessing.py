@@ -10,6 +10,7 @@ from tensorflow.keras.models import Sequential, model_from_json
 from tensorflow.keras.layers import Dense, LSTM, Activation, ReLU, TimeDistributed, Bidirectional, Embedding, Flatten
 import matplotlib.pyplot as plt
 from keras.utils import to_categorical
+import re
 
 # Uncomment if you want to make sure you have GPU in your devices
 # from tensorflow_core.python.client import device_lib
@@ -169,6 +170,40 @@ def midi_preprocess(path, notes_hash, print_info=False, separate_midi_file=False
 
     return notes_list, input_windows, target_windows
 
+def text_preprocess(path, notes_hash, print_info=False, separate_midi_file=False):
+    with open(path) as file:
+        contents = file.read()
+        print(contents)
+        words = re.split('\.\n|\. |\n| ', contents)
+        # for sentence in sentences:
+        #     words = re.split('\n| ', sentence)
+        #     for word in words:
+        #         print(word)
+        #
+        # contents_split = re.split('\n| ', sentence)
+        # print(contents_split)
+
+    for word in words:
+        words_hash.a
+        # print(str(dict_keys_time[key]))
+        dict_keys_time[key] = str(dict_keys_time[key])
+        notes_hash.add_new_note(dict_keys_time[key])
+
+    # total time of piano roll, not of the midi file in seconds
+    total_time = instruments_piano_roll[0].shape[1]
+    # print(instruments_piano_roll[0].shape)
+    notes_list = []
+    for time in range(0, total_time, 1):
+        if time not in dict_keys_time:
+            notes_list += [notes_hash.notes_dict['e']]
+        else:
+            current_note = dict_keys_time[time]
+            notes_list += [notes_hash.notes_dict[current_note]]
+
+    input_windows, target_windows = get_RNN_input_target(notes_list)
+
+    return notes_list, input_windows, target_windows
+
 
 def compare_real_pred_notes(real_notes_list, pred_notes_list):
     matches_count = 0
@@ -242,6 +277,25 @@ class ModelTrainer:
 
         if self.save_hash:
             self.save_notes_hash()
+
+    def preprocess_text_files(self):
+        all_stories_real_words = []
+        temp_all_songs_target_windows = []
+        temp_all_songs_input_windows =[]
+
+        for file in self.files:
+            real_notes_list, input_windows, target_windows = text_preprocess(path=self.path + "/" + file, notes_hash=self.notes_hash,
+                                                                             print_info=True, separate_midi_file=False)
+        #     self.all_songs_input_windows += [input_windows]
+        #     temp_all_songs_target_windows += [target_windows]
+        #     all_songs_real_notes += [real_notes_list]
+        #
+        # for target in temp_all_songs_target_windows:
+        #     target = to_categorical(target, num_classes=self.notes_hash.get_size())
+        #     self.all_songs_target_windows += [target]
+        #
+        # if self.save_hash:
+        #     self.save_notes_hash()
 
     def create_model(self):
         # create sequential network, because we are passing activations
@@ -398,11 +452,14 @@ class ModelTrainer:
 def main():
     path = 'blues/'
     path = 'classic_piano/'
-    files = [i for i in os.listdir(path) if i.endswith(".mid")]
+    path = 'bed_time_stories'
+    #files = [i for i in os.listdir(path) if i.endswith(".mid")]
+    files = [i for i in os.listdir(path) if i.endswith(".txt")][:1]
     print(files)
     model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=NUM_OF_EPOCHS, epochs=1, batches=256,
                          save_weights=True, save_model=True, save_hash=True)
-    model.preprocess_files()
+    #model.preprocess_files()
+    model.preprocess_text_files()
     model.create_model()
     # model.load_all_model()
     # model.model.compile(loss='categorical_crossentropy', optimizer='adam')
