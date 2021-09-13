@@ -19,11 +19,11 @@ import re
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
 SAMPLING_FREQ = 20
-WINDOW_SIZE = 100
+WINDOW_SIZE = 20
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
 GENERATED_SONG_DURATION = 30
-NUM_OF_EPOCHS = 1 #00
+NUM_OF_EPOCHS = 500
 
 
 def piano_roll_to_pretty_midi(piano_roll, fs=SAMPLING_FREQ, program=0):
@@ -472,7 +472,7 @@ def main():
     path = 'classic_piano/'
     path = 'bed_time_stories'
     #files = [i for i in os.listdir(path) if i.endswith(".mid")]
-    files = [i for i in os.listdir(path) if i.endswith(".txt")][:1]
+    files = [i for i in os.listdir(path) if i.endswith(".txt")]
     print(files)
     model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=NUM_OF_EPOCHS, epochs=1, batches=16,
                          save_weights=True, save_model=True, save_hash=True, tokenizer=Tokenizer(empty=''))
