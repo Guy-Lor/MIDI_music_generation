@@ -19,11 +19,11 @@ import re
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
 SAMPLING_FREQ = 20
-WINDOW_SIZE = 200
+WINDOW_SIZE = 20
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
 GENERATED_SONG_DURATION = 30
-NUM_OF_EPOCHS = 100
+NUM_OF_EPOCHS = 1 #00
 
 
 def piano_roll_to_pretty_midi(piano_roll, fs=SAMPLING_FREQ, program=0):
@@ -104,12 +104,12 @@ def get_time_note_dict(piano_roll):
     # return list_of_dict_keys_time
 
 
-def get_RNN_input_target(notes_list):
+def get_RNN_input_target(seq_list):
     # Creates input, target np arrays in the requested window size
     # input_windows = rolling_window([1] * WINDOW_SIZE + notes_list, WINDOW_SIZE)[:-1]
     # If there are any bugs here --> it's Guy's fault!!
-    input_windows = rolling_window([0] * WINDOW_SIZE + notes_list, WINDOW_SIZE)
-    target_windows = rolling_window(notes_list, 1)
+    input_windows = rolling_window([0] * WINDOW_SIZE + seq_list, WINDOW_SIZE)
+    target_windows = rolling_window(seq_list, 1)
     input_windows = np.reshape(input_windows, (input_windows.shape[0], input_windows.shape[1], 1))
     return input_windows, target_windows
 
@@ -170,7 +170,7 @@ def midi_preprocess(path, notes_hash, print_info=False, separate_midi_file=False
 
     return notes_list, input_windows, target_windows
 
-def text_preprocess(path, notes_hash, print_info=False, separate_midi_file=False):
+def text_preprocess(path, words_hash):
     with open(path) as file:
         contents = file.read()
         print(contents)
@@ -184,25 +184,15 @@ def text_preprocess(path, notes_hash, print_info=False, separate_midi_file=False
         # print(contents_split)
 
     for word in words:
-        words_hash.a
-        # print(str(dict_keys_time[key]))
-        dict_keys_time[key] = str(dict_keys_time[key])
-        notes_hash.add_new_note(dict_keys_time[key])
+        words_hash.add_new_note(word)
 
-    # total time of piano roll, not of the midi file in seconds
-    total_time = instruments_piano_roll[0].shape[1]
-    # print(instruments_piano_roll[0].shape)
-    notes_list = []
-    for time in range(0, total_time, 1):
-        if time not in dict_keys_time:
-            notes_list += [notes_hash.notes_dict['e']]
-        else:
-            current_note = dict_keys_time[time]
-            notes_list += [notes_hash.notes_dict[current_note]]
+    words_list = []
+    for word in words:
+        words_list += [words_hash.notes_dict[word]]
 
-    input_windows, target_windows = get_RNN_input_target(notes_list)
+    input_windows, target_windows = get_RNN_input_target(words_list)
 
-    return notes_list, input_windows, target_windows
+    return words_list, input_windows, target_windows
 
 
 def compare_real_pred_notes(real_notes_list, pred_notes_list):
@@ -224,10 +214,10 @@ def draw_compare_graph(real_input, predicted_input, time):
     plt.show()
 
 
-class NotesHash:
-    def __init__(self):
-        self.notes_dict = {'e': 0}
-        self.reversed_notes_dict = {0: 'e'}
+class Tokenizer:
+    def __init__(self, empty='e'):
+        self.notes_dict = {empty: 0}
+        self.reversed_notes_dict = {0: empty}
         self.token_counter = 1
 
     def add_new_note(self, new_note):
@@ -242,8 +232,8 @@ class NotesHash:
 
 
 class ModelTrainer:
-    def __init__(self, files, path, model_arch='lstm', song_epochs=1, epochs=1, batches=128, save_weights=True, save_model=True, save_hash=True, one_hot_input=False):
-        self.notes_hash = NotesHash()
+    def __init__(self, files, path, model_arch='lstm', song_epochs=1, epochs=1, batches=128, save_weights=True, save_model=True, save_hash=True, one_hot_input=False, tokenizer=Tokenizer()):
+        self.tokenizer = tokenizer
         self.songs_epochs = song_epochs
         self.epochs = epochs
         self.batches = batches
@@ -265,14 +255,14 @@ class ModelTrainer:
         temp_all_songs_input_windows =[]
 
         for file in self.files:
-            real_notes_list, input_windows, target_windows = midi_preprocess(path=self.path + file, notes_hash=self.notes_hash,
+            real_notes_list, input_windows, target_windows = midi_preprocess(path=self.path + file, notes_hash=self.tokenizer,
                                                                              print_info=True, separate_midi_file=False)
             self.all_songs_input_windows += [input_windows]
             temp_all_songs_target_windows += [target_windows]
             all_songs_real_notes += [real_notes_list]
 
         for target in temp_all_songs_target_windows:
-            target = to_categorical(target, num_classes=self.notes_hash.get_size())
+            target = to_categorical(target, num_classes=self.tokenizer.get_size())
             self.all_songs_target_windows += [target]
 
         if self.save_hash:
@@ -284,23 +274,23 @@ class ModelTrainer:
         temp_all_songs_input_windows =[]
 
         for file in self.files:
-            real_notes_list, input_windows, target_windows = text_preprocess(path=self.path + "/" + file, notes_hash=self.notes_hash,
-                                                                             print_info=True, separate_midi_file=False)
-        #     self.all_songs_input_windows += [input_windows]
-        #     temp_all_songs_target_windows += [target_windows]
-        #     all_songs_real_notes += [real_notes_list]
-        #
-        # for target in temp_all_songs_target_windows:
-        #     target = to_categorical(target, num_classes=self.notes_hash.get_size())
-        #     self.all_songs_target_windows += [target]
-        #
-        # if self.save_hash:
-        #     self.save_notes_hash()
+            # noinspection PyTypeChecker
+            real_notes_list, input_windows, target_windows = text_preprocess(path=self.path + "/" + file, words_hash=self.tokenizer)
+            self.all_songs_input_windows += [input_windows]
+            temp_all_songs_target_windows += [target_windows]
+            all_stories_real_words += [real_notes_list]
+
+        for target in temp_all_songs_target_windows:
+            target = to_categorical(target, num_classes=self.tokenizer.get_size())
+            self.all_songs_target_windows += [target]
+
+        if self.save_hash:
+            self.save_notes_hash()
 
     def create_model(self):
         # create sequential network, because we are passing activations
         # down the network
-        output_layer_size = self.notes_hash.get_size()
+        output_layer_size = self.tokenizer.get_size()
         print("outpot", output_layer_size)
 
         if self.model_arch == 'lstm':
@@ -318,7 +308,7 @@ class ModelTrainer:
             # Model 2: Stacked LSTM
             model = Sequential()
             # model.add(Flatten())
-            # model.add(Embedding(self.notes_hash.get_size(), 100, input_length=WINDOW_SIZE))
+            # model.add(Embedding(self.tokenizer.get_size(), 100, input_length=WINDOW_SIZE))
             model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1), return_sequences=True))
             model.add(LSTM(self.batches, input_shape=(WINDOW_SIZE, 1)))
             model.add(Dense(512))
@@ -354,7 +344,7 @@ class ModelTrainer:
                 fixed_input = input_data[:-1]
 
                 if self.model_arch == 'bi-lstm':
-                    bi_lstm_target = to_categorical(input_data[1:], self.notes_hash.get_size())
+                    bi_lstm_target = to_categorical(input_data[1:], self.tokenizer.get_size())
                     self.model.fit(fixed_input, bi_lstm_target, batch_size=self.batches, epochs=self.epochs)
                 else:
                     self.model.fit(fixed_input, target_data, batch_size=self.batches, epochs=self.epochs)
@@ -388,7 +378,7 @@ class ModelTrainer:
         return total_song
 
     def write_midi_file_from_generated(self, generated, midi_file_name="result.mid", start_index=0, max_generated=1000):
-        notes_list = [self.notes_hash.reversed_notes_dict[note_key] for note_key in generated]
+        notes_list = [self.tokenizer.reversed_notes_dict[note_key] for note_key in generated]
 
         array_piano_roll = np.zeros((128, max_generated + 1), dtype=np.int16)
         for index, note in enumerate(notes_list[start_index:max_generated]):
@@ -417,7 +407,7 @@ class ModelTrainer:
 
         # Save notes_hash for future use after model train
         file_to_store = open(saved_name, "wb")
-        pickle.dump(self.notes_hash, file_to_store)
+        pickle.dump(self.tokenizer, file_to_store)
         file_to_store.close()
 
     def load_model_struct(self, path="model.json"):
@@ -438,8 +428,8 @@ class ModelTrainer:
         file_to_read = open(path, "rb")
         loaded_object = pickle.load(file_to_read)
         file_to_read.close()
-        # print(self.notes_hash.reversed_notes_dict)
-        self.notes_hash = loaded_object
+        # print(self.tokenizer.reversed_notes_dict)
+        self.tokenizer = loaded_object
         print("Loaded Notes_hash from disk...")
 
     def load_all_model(self, struct_path="model.json", weights_path="model_weights.h5", hash_path="Notes_hash.pickle"):
@@ -454,10 +444,10 @@ def main():
     path = 'classic_piano/'
     path = 'bed_time_stories'
     #files = [i for i in os.listdir(path) if i.endswith(".mid")]
-    files = [i for i in os.listdir(path) if i.endswith(".txt")][:1]
+    files = [i for i in os.listdir(path) if i.endswith(".txt")]
     print(files)
-    model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=NUM_OF_EPOCHS, epochs=1, batches=256,
-                         save_weights=True, save_model=True, save_hash=True)
+    model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=NUM_OF_EPOCHS, epochs=1, batches=16,
+                         save_weights=True, save_model=True, save_hash=True, tokenizer=Tokenizer(empty=''))
     #model.preprocess_files()
     model.preprocess_text_files()
     model.create_model()
@@ -466,32 +456,31 @@ def main():
     model.train()
 
     #################### for debugging ###########################
-    real_notes_list, input_windows, target_windows = midi_preprocess(path=path + files[0], notes_hash=model.notes_hash,
-                                                                     print_info=True, separate_midi_file=False)
+    real_notes_list, input_windows, target_windows = text_preprocess(path=path + files[0], words_hash=model.tokenizer)
     # # midi_length = len(real_notes_list)
     #
-    generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-    print(generated)
-    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_model.mid",
-                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-    model_generated = generated
-    print(real_notes_list)
-    model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
-                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-    #
-    # model.load_all_model()
-    # #
     # generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-    print(generated)
-    generated = model.generate_MIDI([0] * (WINDOW_SIZE - 1) + [2], length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-    model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_one_note.mid",
-                                         start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-    # # #####################################################################
-    #
-    # # draw_compare_graph(real_input=real_notes_list, predicted_input=pred_notes_list, time=midi_length)
-    compare_real_pred_notes(real_notes_list[:GENERATED_SONG_DURATION * SAMPLING_FREQ], model_generated[:GENERATED_SONG_DURATION * SAMPLING_FREQ])
-    # # pred_notes_list = generated
-    #
+    # print(generated)
+    # model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_model.mid",
+    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    # model_generated = generated
+    # print(real_notes_list)
+    # model.write_midi_file_from_generated(real_notes_list, midi_file_name="Generated_real_song.mid",
+    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    # #
+    # # model.load_all_model()
+    # # #
+    # # generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    # print(generated)
+    # generated = model.generate_MIDI([0] * (WINDOW_SIZE - 1) + [2], length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    # model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_one_note.mid",
+    #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
+    # # # #####################################################################
+    # #
+    # # # draw_compare_graph(real_input=real_notes_list, predicted_input=pred_notes_list, time=midi_length)
+    # compare_real_pred_notes(real_notes_list[:GENERATED_SONG_DURATION * SAMPLING_FREQ], model_generated[:GENERATED_SONG_DURATION * SAMPLING_FREQ])
+    # # # pred_notes_list = generated
+    # #
 
 
 if __name__ == '__main__':
