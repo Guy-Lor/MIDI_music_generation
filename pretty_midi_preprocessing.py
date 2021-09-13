@@ -19,7 +19,7 @@ import re
 
 # Sampling freq of the columns for piano roll. The higher, the more "timeline" columns we have.
 SAMPLING_FREQ = 20
-WINDOW_SIZE = 20
+WINDOW_SIZE = 100
 VELOCITY_CONST = 64
 # The duration of the song we want to be generated (in seconds)
 GENERATED_SONG_DURATION = 30
@@ -171,10 +171,21 @@ def midi_preprocess(path, notes_hash, print_info=False, separate_midi_file=False
     return notes_list, input_windows, target_windows
 
 def text_preprocess(path, words_hash):
+    print("Opening file path: ", path)
     with open(path) as file:
         contents = file.read()
         print(contents)
-        words = re.split('\.\n|\. |\n| ', contents)
+        words = re.split('\n\n|\n| ', contents)
+        words_with_dots_commas_and_more = []
+        for word in words:
+            if word.endswith('.'):
+                words_with_dots_commas_and_more += [word[:-1], '.']
+            elif word.endswith(','):
+                words_with_dots_commas_and_more += [word[:-1], ',']
+            elif word.endswith(':'):
+                words_with_dots_commas_and_more += [word[:-1], ':']
+            else:
+                words_with_dots_commas_and_more += [word]
         # for sentence in sentences:
         #     words = re.split('\n| ', sentence)
         #     for word in words:
@@ -183,11 +194,11 @@ def text_preprocess(path, words_hash):
         # contents_split = re.split('\n| ', sentence)
         # print(contents_split)
 
-    for word in words:
+    for word in words_with_dots_commas_and_more:
         words_hash.add_new_note(word)
 
     words_list = []
-    for word in words:
+    for word in words_with_dots_commas_and_more:
         words_list += [words_hash.notes_dict[word]]
 
     input_windows, target_windows = get_RNN_input_target(words_list)
@@ -352,30 +363,30 @@ class ModelTrainer:
             if self.save_weights:
                 self.save_model_weights()
 
-    def generate_MIDI(self, initial_sample: list, length):
+    def generate(self, initial_sample: list, length):
         length = length - WINDOW_SIZE
         current_window = initial_sample
         current_window_list = list(current_window)
-        total_song = list(initial_sample)
-        # print(total_song)
+        generated = list(initial_sample)
+        # print(generated)
         for i in range(length):
             current_window = np.array([current_window_list])
             current_window = np.reshape(current_window, (current_window.shape[0], current_window.shape[1], 1))
 
-            y = self.model.predict_classes(current_window)
+            y = self.model.predict_classes(current_window.astype(float))
             # print(y.shape)
             # print(y[0][-1])
             if self.model_arch == 'bi-lstm':
                 current_window_list += [int(y[0][-1])]
                 current_window_list.pop(0)
-                total_song += [int(y[0][-1])]
+                generated += [int(y[0][-1])]
             else:
                 current_window_list += [int(y)]
                 current_window_list.pop(0)
-                total_song += [int(y)]
+                generated += [int(y)]
 
-        # print("Total song pred:\n", total_song)
-        return total_song
+        # print("Total song pred:\n", generated)
+        return generated
 
     def write_midi_file_from_generated(self, generated, midi_file_name="result.mid", start_index=0, max_generated=1000):
         notes_list = [self.tokenizer.reversed_notes_dict[note_key] for note_key in generated]
@@ -393,6 +404,23 @@ class ModelTrainer:
         array_piano_roll = np.reshape(array_piano_roll, (array_piano_roll.shape[0], array_piano_roll.shape[1]))
         pretty_midi_obj = piano_roll_to_pretty_midi(array_piano_roll, fs=SAMPLING_FREQ, program=0)
         pretty_midi_obj.write(midi_file_name)
+
+    def write_text_file_from_generated(self, generated, output_file_name="result.txt", start_index=0, max_generated=1000):
+        words_list = [self.tokenizer.reversed_notes_dict[note_key] for note_key in generated]
+
+        generated_text = str()
+        for index, word in enumerate(words_list[start_index:max_generated]):
+            if word == '':
+                pass
+            else:
+                if word == '.' or word == ',' or word == ':':
+                    generated_text = generated_text[:-1]
+                    generated_text += word + ' '
+                else:
+                    generated_text += word + ' '
+
+        with open(output_file_name, "w") as text_file:
+            text_file.write(generated_text)
 
     def save_structure(self, saved_name="model.json"):
         # Create model's JSON
@@ -444,7 +472,7 @@ def main():
     path = 'classic_piano/'
     path = 'bed_time_stories'
     #files = [i for i in os.listdir(path) if i.endswith(".mid")]
-    files = [i for i in os.listdir(path) if i.endswith(".txt")]
+    files = [i for i in os.listdir(path) if i.endswith(".txt")][:1]
     print(files)
     model = ModelTrainer(files=files, path=path, model_arch='stacked-lstm', song_epochs=NUM_OF_EPOCHS, epochs=1, batches=16,
                          save_weights=True, save_model=True, save_hash=True, tokenizer=Tokenizer(empty=''))
@@ -456,11 +484,13 @@ def main():
     model.train()
 
     #################### for debugging ###########################
-    real_notes_list, input_windows, target_windows = text_preprocess(path=path + files[0], words_hash=model.tokenizer)
+    real_notes_list, input_windows, target_windows = text_preprocess(path=path + "/" + files[0], words_hash=model.tokenizer)
+
     # # midi_length = len(real_notes_list)
     #
-    # generated = model.generate_MIDI(list(input_windows[WINDOW_SIZE].flatten()), length=GENERATED_SONG_DURATION * SAMPLING_FREQ)
-    # print(generated)
+    generated = model.generate(list(input_windows[WINDOW_SIZE].flatten()), length=WINDOW_SIZE*3)
+    print(generated)
+    model.write_text_file_from_generated(generated, output_file_name=f"Generated_text_from_story: {files[0]}.txt")
     # model.write_midi_file_from_generated(generated, midi_file_name="Generated_from_model.mid",
     #                                      start_index=0, max_generated=GENERATED_SONG_DURATION * SAMPLING_FREQ)
     # model_generated = generated
